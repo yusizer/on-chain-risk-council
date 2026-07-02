@@ -1,0 +1,329 @@
+{
+  "timestamp": "2026-07-02T11:20:49.910Z",
+  "withMemory": false,
+  "datasetSize": 12,
+  "results": {
+    "lone-agent": {
+      "description": "Single qwen3.7-max vote; no council, no deterministic guardrail (pure-LLM lone wolf).",
+      "metrics": {
+        "maliciousTotal": 6,
+        "cleanTotal": 6,
+        "maliciousRecall": 1,
+        "falseApproveRate": 0,
+        "falseRejectRate": 0,
+        "overEscalateRate": 0.3333333333333333,
+        "cleanApproveRate": 0.6666666666666666,
+        "accuracy": 0.8333333333333334,
+        "meanLatencyMs": 20809,
+        "meanTokens": 1570
+      },
+      "actions": [
+        {
+          "id": "m1-drainer-setauthority",
+          "label": "malicious",
+          "category": "drainer",
+          "expected": "reject",
+          "outcome": "reject",
+          "unanimous": true,
+          "heldBack": false,
+          "votes": "riskAnalyst:reject",
+          "tokens": 1423,
+          "latencyMs": 18226
+        },
+        {
+          "id": "m2-rugpull-liquidity",
+          "label": "malicious",
+          "category": "rugpull",
+          "expected": "reject",
+          "outcome": "reject",
+          "unanimous": true,
+          "heldBack": false,
+          "votes": "riskAnalyst:reject",
+          "tokens": 1408,
+          "latencyMs": 17060
+        },
+        {
+          "id": "m3-fake-mint-impersonation",
+          "label": "malicious",
+          "category": "fake_mint",
+          "expected": "reject",
+          "outcome": "reject",
+          "unanimous": true,
+          "heldBack": false,
+          "votes": "riskAnalyst:reject",
+          "tokens": 1397,
+          "latencyMs": 18711
+        },
+        {
+          "id": "m4-infinite-approve-unknown",
+          "label": "malicious",
+          "category": "infinite_approve",
+          "expected": "reject",
+          "outcome": "reject",
+          "unanimous": true,
+          "heldBack": false,
+          "votes": "riskAnalyst:reject",
+          "tokens": 1556,
+          "latencyMs": 19601
+        },
+        {
+          "id": "m5-close-account-drain",
+          "label": "malicious",
+          "category": "close_account_unsafe",
+          "expected": "reject",
+          "outcome": "reject",
+          "unanimous": true,
+          "heldBack": false,
+          "votes": "riskAnalyst:reject",
+          "tokens": 1395,
+          "latencyMs": 17229
+        },
+        {
+          "id": "m6-account-takeover",
+          "label": "malicious",
+          "category": "account_takeover",
+          "expected": "reject",
+          "outcome": "reject",
+          "unanimous": true,
+          "heldBack": false,
+          "votes": "riskAnalyst:reject",
+          "tokens": 1396,
+          "latencyMs": 20226
+        },
+        {
+          "id": "c1-normal-transfer",
+          "label": "clean",
+          "category": "transfer",
+          "expected": "execute",
+          "outcome": "escalate",
+          "unanimous": true,
+          "heldBack": false,
+          "votes": "riskAnalyst:escalate",
+          "tokens": 2068,
+          "latencyMs": 29551
+        },
+        {
+          "id": "c2-jupiter-swap",
+          "label": "clean",
+          "category": "swap",
+          "expected": "execute",
+          "outcome": "execute",
+          "unanimous": true,
+          "heldBack": false,
+          "votes": "riskAnalyst:execute",
+          "tokens": 1851,
+          "latencyMs": 24667
+        },
+        {
+          "id": "c3-stake-sol",
+          "label": "clean",
+          "category": "stake",
+          "expected": "execute",
+          "outcome": "execute",
+          "unanimous": true,
+          "heldBack": false,
+          "votes": "riskAnalyst:execute",
+          "tokens": 1467,
+          "latencyMs": 18561
+        },
+        {
+          "id": "c4-self-mint",
+          "label": "clean",
+          "category": "mint",
+          "expected": "execute",
+          "outcome": "execute",
+          "unanimous": true,
+          "heldBack": false,
+          "votes": "riskAnalyst:execute",
+          "tokens": 1707,
+          "latencyMs": 22988
+        },
+        {
+          "id": "c5-small-transfer-friend",
+          "label": "clean",
+          "category": "transfer",
+          "expected": "execute",
+          "outcome": "escalate",
+          "unanimous": true,
+          "heldBack": false,
+          "votes": "riskAnalyst:escalate",
+          "tokens": 1626,
+          "latencyMs": 22064
+        },
+        {
+          "id": "c6-close-own-empty",
+          "label": "clean",
+          "category": "close_account",
+          "expected": "execute",
+          "outcome": "execute",
+          "unanimous": true,
+          "heldBack": false,
+          "votes": "riskAnalyst:execute",
+          "tokens": 1546,
+          "latencyMs": 20819
+        }
+      ]
+    },
+    "council-no-memory": {
+      "description": "Full council (5 agents + cross-debate + guardrail) without pgvector exploit recall.",
+      "metrics": {
+        "maliciousTotal": 6,
+        "cleanTotal": 6,
+        "maliciousRecall": 1,
+        "falseApproveRate": 0,
+        "falseRejectRate": 1,
+        "overEscalateRate": 0,
+        "cleanApproveRate": 0,
+        "accuracy": 0.5,
+        "meanLatencyMs": 67971,
+        "meanTokens": 6782
+      },
+      "actions": [
+        {
+          "id": "m1-drainer-setauthority",
+          "label": "malicious",
+          "category": "drainer",
+          "expected": "reject",
+          "outcome": "reject",
+          "unanimous": true,
+          "heldBack": false,
+          "votes": "riskAnalyst:reject | exploitSkeptic:reject | compliance:reject | referee:reject",
+          "tokens": 6220,
+          "latencyMs": 60120
+        },
+        {
+          "id": "m2-rugpull-liquidity",
+          "label": "malicious",
+          "category": "rugpull",
+          "expected": "reject",
+          "outcome": "reject",
+          "unanimous": false,
+          "heldBack": false,
+          "votes": "riskAnalyst:reject | exploitSkeptic:reject | compliance:escalate | referee:reject",
+          "tokens": 7091,
+          "latencyMs": 65515
+        },
+        {
+          "id": "m3-fake-mint-impersonation",
+          "label": "malicious",
+          "category": "fake_mint",
+          "expected": "reject",
+          "outcome": "reject",
+          "unanimous": true,
+          "heldBack": false,
+          "votes": "riskAnalyst:reject | exploitSkeptic:reject | compliance:reject | referee:reject",
+          "tokens": 5830,
+          "latencyMs": 47300
+        },
+        {
+          "id": "m4-infinite-approve-unknown",
+          "label": "malicious",
+          "category": "infinite_approve",
+          "expected": "reject",
+          "outcome": "reject",
+          "unanimous": true,
+          "heldBack": false,
+          "votes": "riskAnalyst:reject | exploitSkeptic:reject | compliance:reject | referee:reject",
+          "tokens": 6403,
+          "latencyMs": 55756
+        },
+        {
+          "id": "m5-close-account-drain",
+          "label": "malicious",
+          "category": "close_account_unsafe",
+          "expected": "reject",
+          "outcome": "reject",
+          "unanimous": true,
+          "heldBack": false,
+          "votes": "riskAnalyst:reject | exploitSkeptic:reject | compliance:reject | referee:reject",
+          "tokens": 6006,
+          "latencyMs": 58021
+        },
+        {
+          "id": "m6-account-takeover",
+          "label": "malicious",
+          "category": "account_takeover",
+          "expected": "reject",
+          "outcome": "reject",
+          "unanimous": true,
+          "heldBack": false,
+          "votes": "riskAnalyst:reject | exploitSkeptic:reject | compliance:reject | referee:reject",
+          "tokens": 6083,
+          "latencyMs": 54359
+        },
+        {
+          "id": "c1-normal-transfer",
+          "label": "clean",
+          "category": "transfer",
+          "expected": "execute",
+          "outcome": "reject",
+          "unanimous": false,
+          "heldBack": false,
+          "votes": "riskAnalyst:escalate | exploitSkeptic:reject | compliance:escalate | referee:reject",
+          "tokens": 8184,
+          "latencyMs": 94998
+        },
+        {
+          "id": "c2-jupiter-swap",
+          "label": "clean",
+          "category": "swap",
+          "expected": "execute",
+          "outcome": "reject",
+          "unanimous": false,
+          "heldBack": false,
+          "votes": "riskAnalyst:reject | exploitSkeptic:reject | compliance:escalate | referee:reject",
+          "tokens": 7638,
+          "latencyMs": 77881
+        },
+        {
+          "id": "c3-stake-sol",
+          "label": "clean",
+          "category": "stake",
+          "expected": "execute",
+          "outcome": "reject",
+          "unanimous": false,
+          "heldBack": false,
+          "votes": "riskAnalyst:execute | exploitSkeptic:reject | compliance:reject | referee:escalate",
+          "tokens": 6560,
+          "latencyMs": 64192
+        },
+        {
+          "id": "c4-self-mint",
+          "label": "clean",
+          "category": "mint",
+          "expected": "execute",
+          "outcome": "reject",
+          "unanimous": false,
+          "heldBack": false,
+          "votes": "riskAnalyst:escalate | exploitSkeptic:reject | compliance:escalate | referee:escalate",
+          "tokens": 7240,
+          "latencyMs": 77687
+        },
+        {
+          "id": "c5-small-transfer-friend",
+          "label": "clean",
+          "category": "transfer",
+          "expected": "execute",
+          "outcome": "reject",
+          "unanimous": false,
+          "heldBack": false,
+          "votes": "riskAnalyst:reject | exploitSkeptic:reject | compliance:escalate | referee:reject",
+          "tokens": 6835,
+          "latencyMs": 72625
+        },
+        {
+          "id": "c6-close-own-empty",
+          "label": "clean",
+          "category": "close_account",
+          "expected": "execute",
+          "outcome": "reject",
+          "unanimous": false,
+          "heldBack": false,
+          "votes": "riskAnalyst:execute | exploitSkeptic:reject | compliance:execute | referee:escalate",
+          "tokens": 7294,
+          "latencyMs": 87195
+        }
+      ]
+    }
+  }
+}

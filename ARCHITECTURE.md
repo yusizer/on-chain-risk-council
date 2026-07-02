@@ -71,17 +71,20 @@ flowchart TD
 ## Components (file map)
 | Concern | Path |
 |---|---|
-| Qwen client + model registry | `lib/qwen.ts` |
-| Helius MCP client | `lib/helius-mcp.ts` |
+| Qwen client + model registry + token tracking | `lib/qwen.ts` |
+| Helius MCP client (consume) | `lib/helius-mcp.ts` |
 | pgvector memory + audit log | `lib/db.ts` |
-| Deterministic guardrail | `lib/guardrail.ts` *(D2)* |
-| Agents | `agents/{intake,riskAnalyst,exploitSkeptic,compliance,simulator,referee}.ts` *(D2–D3)* |
-| Debate orchestration + SSE | `orchestrator/council.ts` *(D3)* |
-| Council-as-MCP-server | `mcp-server/server.ts` *(D7)* |
-| Benchmark | `benchmark/{dataset,runner,baselines}.ts` *(D5)* |
-| API routes | `app/api/{actions,decisions,benchmark,stream,health}/route.ts` |
-| Frontend | `app/page.tsx` (council chamber) + `app/benchmark/page.tsx` *(D6)* |
-| Alibaba proof + deploy | `alibaba/proof.ts`, `alibaba/DEPLOY.md`, `Dockerfile` *(D7)* |
+| Deterministic guardrail | `lib/guardrail.ts` |
+| Shared zod schemas | `lib/types.ts` |
+| Synthetic exploit seeds | `lib/exploitSeeds.ts` |
+| Agents | `agents/{intake,riskAnalyst,exploitSkeptic,compliance,simulator,referee}.ts` |
+| Debate orchestration + SSE | `orchestrator/council.ts` |
+| Council-as-MCP-server (expose) | `mcp-server/server.ts` |
+| Benchmark | `benchmark/{dataset,baselines,runner}.ts` + `benchmark/results/` |
+| API routes | `app/api/{actions,stream,health}/route.ts` |
+| Frontend | `app/page.tsx` (council chamber) + `app/benchmark/page.tsx` (dashboard) |
+| Scripts | `scripts/{smoke,probe_helius}.ts` |
+| Alibaba proof + deploy | `alibaba/proof.ts`, `alibaba/DEPLOY.md`, `Dockerfile` *(D7 — pending Alibaba account)* |
 
 ## Judging criteria mapping
 - **Technical Depth & Engineering (30%)** — double MCP (consume Helius +

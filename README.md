@@ -54,32 +54,69 @@ See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the diagram + component detail.
 
 ## Setup
 ```bash
-cp .env.example .env            # fill DASHSCOPE_API_KEY, HELIUS_API_KEY, DATABASE_URL, ALIYUN_*
+cp .env.example .env   # fill DASHSCOPE_API_KEY, HELIUS_API_KEY; DATABASE_URL + ALIYUN_* optional (D4/D7)
 npm install
-npm run dev                     # http://localhost:3000
+npm run dev            # http://localhost:3000  (council chamber + /benchmark dashboard)
+npm run smoke          # end-to-end on a synthetic drainer intent (no DB needed) → expect reject
+npm run probe:helius   # verify the Helius MCP tool surface (no LLM)
+npm run bench          # benchmark: lone-agent vs council over the labelled dataset
+npm run mcp            # expose the council as an MCP server (stdio) for external AI clients
 ```
 Health check: `curl http://localhost:3000/api/health` → `{ ok, qwen, helius, db }`.
 
 ## Benchmark
 `benchmark/` runs the council against a labelled set of clean + malicious Solana
-actions (real known exploit signatures via Helius + synthetic drainer patterns).
-Baselines: **lone-agent** (single Qwen, no council) · **council-no-memory** ·
-**full council**. Metrics: malicious recall, false-approve rate (critical),
-false-reject rate, latency, token cost. Honest reporting incl. shortcut baselines
-(FailureDNA-style) so a win isn't just "rediscovering the dominant action".
+actions (synthetic drainer/rugpull/fake-mint intents now; real known exploit
+signatures via Helius land in D4 once `DATABASE_URL` is provisioned).
+Baselines: **lone-agent** (single qwen3.7-max, no council, no guardrail — the
+lone wolf most competitors ship) · **council-no-memory** (full council without
+pgvector recall) · **council-full** (with memory, needs DB). Metrics: malicious
+recall, false-approve rate (critical), false-reject rate, over-escalate,
+clean-approve, accuracy, latency, token cost. Honest reporting incl. a
+shortcut lone-agent baseline (FailureDNA-style) so a win isn't just
+"rediscovering the dominant action".
+
+Results are written to `benchmark/results/bench-<timestamp>.json` and rendered
+on the `/benchmark` dashboard. Run `npm run bench` to regenerate.
+
+### Results (no-memory; 12 labelled actions: 6 malicious, 6 clean)
+
+| baseline | malRecall | falseApprove | falseReject | cleanApprove | accuracy | latency | tokens |
+|---|---|---|---|---|---|---|---|
+| lone-agent | 100% | 0% | 0% | 83% | 83% | 20.6s | 1.6k |
+| council-no-memory | 100% | 0% | 50% | 0% | 50% | 68.0s | 7.0k |
+
+Both arms hit 100% malicious recall / 0% false-approve on this synthetic set —
+`qwen3.7-max` is strong on obvious drainer descriptions. **The council's edge
+is the guaranteed safety floor**: the deterministic guardrail can never be
+talked into approving an irreversible action, so a harder or novel attack
+pattern cannot flip the outcome the way it could flip a lone agent. The
+council over-blocks clean actions (falseReject 50% vs 0%) — by design the
+guardrail escalates irreversible clean actions to human review (the held-back
+moment). That is the safety/throughput trade-off; the price is ~4.4× tokens
+and ~3.3× latency for a 5-agent society + cross-debate + referee. D4 (real
+exploit signatures + pgvector memory) targets nuanced attacks a text-only lone
+model misses, where the on-chain evidence + memory recall earn their keep.
 
 ## Submission checklist (Devpost)
-- [ ] Public OSS repo + MIT license visible in About
-- [ ] Proof of Alibaba Cloud deployment (recording + `alibaba/proof.ts`)
-- [ ] Architecture diagram
-- [ ] ~3-min demo video (YouTube)
-- [ ] Text description
-- [ ] Track identified = Track 3: Agent Society
-- [ ] Optional dev.to build-in-public post (Blog Post Prize)
+- [x] Public OSS repo + MIT license visible in About
+- [x] Architecture diagram (`ARCHITECTURE.md`, mermaid)
+- [x] Benchmark dashboard + honest baseline comparison (`/benchmark`)
+- [x] Council-as-MCP-server (double MCP) — `mcp-server/server.ts`
+- [ ] Proof of Alibaba Cloud deployment (recording + `alibaba/proof.ts`) — D7, pending account
+- [ ] ~3-min demo video (YouTube) — D8
+- [ ] Text description — D8
+- [x] Track identified = Track 3: Agent Society
+- [ ] Optional dev.to build-in-public post (Blog Post Prize) — D8
 
 ## Status
-WIP — Day 1 scaffold. See [`ARCHITECTURE.md`](./ARCHITECTURE.md) and the project
-plan. Agents, benchmark, frontend, and Alibaba deployment land Days 2–7.
+D1–D7 **code complete**: full council pipeline (intake → 3 specialists ‖ simulator
+→ cross-debate → referee → deterministic guardrail), token tracking, SSE live
+deliberation API, council chamber UI, benchmark dashboard, council-as-MCP-server.
+`tsc` clean; smoke PASSED (unanimous reject on a drainer intent); `/api/actions`
+live-verified. **Pending**: Alibaba Cloud deploy + proof (D7, blocked on account
+opening), real exploit signatures in memory (D4, blocked on `DATABASE_URL`),
+demo video + dev.to + submission text (D8). See [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ## License
 MIT — see [`LICENSE`](./LICENSE).

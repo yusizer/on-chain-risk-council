@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "eslint",
     "smoke": "node --env-file=.env --import tsx scripts/smoke.ts",
-    "probe:helius": "node --env-file=.env --import tsx scripts/probe_helius.ts"
+    "probe:helius": "node --env-file=.env --import tsx scripts/probe_helius.ts",
+    "bench": "node --env-file=.env --import tsx benchmark/runner.ts",
+    "mcp": "node --env-file=.env --import tsx mcp-server/server.ts",
+    "proof": "node --env-file=.env --import tsx alibaba/proof.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

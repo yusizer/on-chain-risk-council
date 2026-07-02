@@ -1,0 +1,41 @@
+flowchart TD
+    U[Client / Solana wallet or agent] -->|"POST /api/actions {tx or intent}"'| API[Next.js API routes\nApp Router, Node runtime]
+
+    API --> ORCH[Council Orchestrator\ndebate rounds + SSE stream]
+
+    subgraph QWEN[Qwen Cloud — DashScope OpenAI-compatible]
+        QMAX[qwen3.7-max\nreasoning]
+        QCODER[qwen3-coder-plus\ntx/code analysis]
+        QTURBO[qwen-turbo\nrouting/summaries]
+        QEMB[text-embedding-v3\n1024-d embeddings]
+    end
+
+    subgraph HELIUS[Helius MCP server — stdio subprocess]
+        HT[heliusTransaction\nparseTransactions]
+        HC[heliusChain\ngetAccountInfo / getTokenAccounts / simulateTransaction]
+        HW[heliusWallet\nfunding analysis]
+    end
+
+    subgraph MEM[Alibaba RDS PostgreSQL + pgvector]
+        EP[(exploit_patterns\nlabelled + 1024-d vector)]
+        DEC[(decisions\naudit log + votes + guardrail)]
+    end
+
+    ORCH -->|"intake/classify"| QTURBO
+    ORCH -->|"risk dimensions"| QMAX
+    ORCH -->|"exploit-pattern match"| QCODER
+    QCODER -->|"parseTransactions / getAccountInfo / getTokenAccounts"| HT
+    QCODER -->|"wallet funding"| HW
+    QCODER -->|"semantic recall"| QEMB
+    QEMB --> EP
+    EP --> QCODER
+    ORCH -->|"policy rules"| POL[Compliance\n deterministic]
+    ORCH -->|"simulate tx"| HC
+    HC -->|"logs / CU / account diff"| ORCH
+    ORCH -->|"aggregate debate"| QMAX
+    ORCH -->|"votes + reasoning"| GR[Guardrail\n deterministic one-way ratchet]
+    GR -->|outcome: execute / escalate / reject| API
+    API -->|"SSE live deliberation"| U
+    ORCH -->|"persist votes + guardrail + tokens + latency"| DEC
+
+    MCPSRV[MCP server\nexposes council tools] -.->|external AI clients| API

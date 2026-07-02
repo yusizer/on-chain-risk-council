@@ -16,6 +16,8 @@ export async function riskAnalyst(record: TrustedActionRecord, emit?: Emit, budg
     "You are the Risk Analyst of an on-chain (Solana) risk council. Evaluate the action across: (a) amount at risk, (b) counterparty novelty — fresh/unknown accounts are riskier, " +
     "(c) authority or privilege changes (setAuthority, approve delegate, close-account), (d) recoverability. " +
     "Vote one of: execute (safe to proceed), escalate (needs human check), reject (clearly malicious/unsafe). " +
+    "IMPORTANT: irreversible or high-stakes ALONE → escalate (human check), NOT reject — reject is for clearly malicious/unsafe actions only. " +
+    "A normal transfer / DEX swap / stake to an established counterparty is execute, even though it is irreversible. Do NOT reject clean routine actions. " +
     "Set confidence 0..1. List concrete evidence lines. Add flag \"blocking_flag\" ONLY for clear danger " +
     "(e.g., setAuthority to an unknown account, large transfer to a freshly-funded wallet, burn of user funds).";
 

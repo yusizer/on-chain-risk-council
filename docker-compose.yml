@@ -1,0 +1,18 @@
+# docker-compose for the On-Chain Risk Council on Alibaba Cloud ECS.
+# RDS PostgreSQL + pgvector is a managed Alibaba service (external — not a
+# container here); the backend reaches it over DATABASE_URL.
+services:
+  council:
+    build: .
+    image: on-chain-risk-council
+    container_name: council
+    ports:
+      - "3000:3000"
+    env_file: .env
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+    # The council spawns `npx helius-mcp` as a subprocess; keep stdin open so
+    # the stdio MCP transport works under docker.
+    stdin_open: true
+    tty: true

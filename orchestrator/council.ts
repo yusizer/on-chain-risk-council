@@ -68,7 +68,8 @@ async function reviseVote(
     `You are the ${self.agent} of an on-chain (Solana) risk council, in a cross-debate round. ` +
     `You see the other councillors' votes. You may revise your own vote based on new evidence they raise, ` +
     `but stay grounded in your specialty — do not simply conform to the majority. Keep flag \"blocking_flag\" ` +
-    `if your original evidence still holds. Vote execute | escalate | reject.`;
+    `if your original evidence still holds. Vote execute | escalate | reject. ` +
+    `Reject only on a concrete exploit signal — do not reject clean routine actions (normal transfer, swap, stake, self-mint); irreversible alone → escalate, not reject.`;
   const user =
     `Trusted action record:\n${JSON.stringify(record, null, 2)}\n\n` +
     `Your round-1 vote: ${self.vote} (conf ${self.confidence.toFixed(2)}), flags [${self.flags.join(",")}]\n` +
