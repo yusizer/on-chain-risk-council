@@ -81,6 +81,32 @@ export const DATASET: BenchmarkAction[] = [
     note: "account takeover — fresh-funded new owner",
   },
 
+  // ── malicious (REAL on-chain exploit signatures — Wormhole bridge, Feb 2022) ─
+  // These exercise the real parseTransactions path: intake parses actual on-chain
+  // data via Helius, so the council reasons over real tx content, not a description.
+  {
+    id: "r1-wormhole-complete-wrapped",
+    label: "malicious",
+    category: "bridge_exploit",
+    expected: "reject",
+    action: {
+      signature: "2zCz2GgSoSS68eNJENWrYB48dMM1zmH8SZkgYneVDv2G4gRsVfwu5rNXtK5BKFxn7fSqX9BvrBc1rdPAeBEcD6Es",
+      network: "mainnet",
+    },
+    note: "REAL — Wormhole bridge exploit ($325M, Feb 2022): complete_wrapped step minting wrapped SOL without valid backing. Tests intake parseTransactions on real on-chain data.",
+  },
+  {
+    id: "r2-wormhole-verify-signatures",
+    label: "malicious",
+    category: "bridge_exploit",
+    expected: "reject",
+    action: {
+      signature: "25Zu1L2Q9uk998d5GMnX43t9u9eVBKvbVtgHndkc2GmUFed8Pu73LGW6hiDsmGXHykKUTLkvUdh4yXPdL3Jo4wVS",
+      network: "mainnet",
+    },
+    note: "REAL — Wormhole exploit: verify_signatures step (forged guardian signatures).",
+  },
+
   // ── clean ─────────────────────────────────────────────────────────────────
   {
     id: "c1-normal-transfer",

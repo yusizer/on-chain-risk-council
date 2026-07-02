@@ -55,19 +55,21 @@ clean-approve, accuracy, latency, token cost.
 
 | baseline | malRecall | falseApprove | falseReject | cleanApprove | accuracy | latency | tokens |
 |---|---|---|---|---|---|---|---|
-| lone-agent (single qwen3.7-max, no guardrail) | 100% | 0% | 0% | 83% | 83% | 20.6s | 1.6k |
-| council-no-memory (5 agents + cross-debate + guardrail) | 100% | 0% | 50% | 0% | 50% | 68.0s | 7.0k |
+| lone-agent (single qwen3.7-max, no guardrail) | 75% | **25%** | 0% | 100% | 79% | 21.5s | 1.8k |
+| council-no-memory (5 agents + cross-debate + guardrail) | **100%** | **0%** | 17% | 17% | 57% | 56.3s | 6.6k |
 
-The thesis row: council `falseApprove` = 0% (tied with lone-agent on this
-synthetic set — qwen3.7-max is strong on obvious drainer descriptions). The
-council's real edge is the **guaranteed safety floor**: the deterministic
-guardrail can never be talked into approving an irreversible action, so a
-harder/novel attack cannot flip the outcome the way it could flip a lone agent
-with no floor. The council over-blocks clean actions (falseReject 50%) by
-design — the guardrail escalates irreversible clean actions to human review
-(the held-back moment). Safety/throughput trade-off: ~4.4× tokens, ~3.3×
-latency. Real exploit signatures + pgvector memory (D4) target the nuanced
-attacks a text-only lone model misses.
+The thesis row: **council `falseApprove` = 0% vs lone-agent 25%**. The dataset
+includes 2 real on-chain Wormhole exploit signatures ($325M bridge hack). The
+lone wolf **false-approves both real Wormhole signatures** — a single strong
+model with no safety floor green-lights an actual exploit. The council catches
+both (`r1` → escalate, `r2` → reject) and hits 100% malicious recall / 0%
+false-approve. That is the deterministic-guardrail-over-society thesis: it can
+never be talked into approving an irreversible exploit. Trade-off: the council
+over-blocks clean (cleanApprove 17% vs 100%) — the guardrail escalates
+irreversible clean actions to human review by design (the held-back moment).
+For high-stakes on-chain review, never approving a drainer matters more than
+never bothering a human. ~3.6× tokens, ~2.6× latency. pgvector memory (D4)
+targets even more nuanced attacks.
 
 ## Challenges we ran into
 - **Helius MCP telemetry footgun**: every routed tool requires `_feedback` /

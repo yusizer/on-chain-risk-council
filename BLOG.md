@@ -96,22 +96,26 @@ false-reject, over-escalate, clean-approve, accuracy, latency, and token cost.
 
 | baseline | malRecall | falseApprove | falseReject | cleanApprove | accuracy | latency | tokens |
 |---|---|---|---|---|---|---|---|
-| lone-agent (single qwen3.7-max, no guardrail) | 100% | 0% | 0% | 83% | 83% | 20.6s | 1.6k |
-| council-no-memory (5 agents + cross-debate + guardrail) | 100% | 0% | 50% | 0% | 50% | 68.0s | 7.0k |
+| lone-agent (single qwen3.7-max, no guardrail) | 75% | **25%** | 0% | 100% | 79% | 21.5s | 1.8k |
+| council-no-memory (5 agents + cross-debate + guardrail) | **100%** | **0%** | 17% | 17% | 57% | 56.3s | 6.6k |
 
-On this synthetic set both arms hit 100% malicious recall and 0% false-approve
-— `qwen3.7-max` is strong on obvious drainer descriptions. So where's the
-council win? It's in the **safety floor**, not the easy-case accuracy. The
-deterministic guardrail can never be talked into approving an irreversible
-action; a lone agent has no such floor, and a harder or novel attack pattern
-could flip its vote. The council over-blocks clean actions (falseReject 50%)
-because the guardrail escalates irreversible clean actions to human review by
-design — the held-back moment. That is the safety/throughput trade-off; the
-price is ~4.4× tokens and ~3.3× latency. (Tuning the skeptic to "reject only on
-a *positive* exploit signal, not on absence of evidence" was the single biggest
-lever — an under-tuned council over-blocks everything and *looks* safe while
-being useless. Real exploit signatures + pgvector memory, landing next, target
-the nuanced attacks a text-only lone model actually misses.)
+The thesis row is `falseApprove`. The dataset is 14 labelled actions: 6
+synthetic malicious, **2 real on-chain Wormhole exploit signatures** (the $325M
+bridge hack), and 6 clean. The lone wolf **false-approves both real Wormhole
+signatures** — a single strong model with no safety floor green-lights an
+actual on-chain exploit. The council catches both and hits 100% malicious
+recall / 0% false-approve. That is the whole point: a deterministic guardrail
+over a multi-agent society can never be talked into approving an irreversible
+exploit the way a lone agent can.
+
+The trade-off is throughput — the council over-blocks clean (cleanApprove 17%
+vs 100%) because the guardrail escalates irreversible clean actions to human
+review by design (the held-back moment). For high-stakes on-chain review that
+is the correct call: never approving a drainer matters more than never
+bothering a human. (Tuning the skeptic to "reject only on a *positive* exploit
+signal, not on absence of evidence" was the single biggest lever — an
+under-tuned council over-blocks everything and *looks* safe while being
+useless. pgvector memory, landing next, targets even more nuanced attacks.)
 
 ## Live demo
 

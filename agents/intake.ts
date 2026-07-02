@@ -66,7 +66,9 @@ export async function intake(input: ActionInput, emit?: Emit, budget?: TokenBudg
   // 2. Classify with the fast model (qwen-turbo), structured output.
   const system =
     "You are the Intake router of an on-chain risk council. Given a Solana action description (a parsed on-chain transaction or a natural-language intent), extract a structured record. " +
-    "Be CONSERVATIVE: if unsure about reversibility, mark reversible=false; if unsure about authorityChanges, mark true. counterparties = external accounts the action sends funds/authority to. amountUsd = numeric USD value or null if unknown.";
+    "Be CONSERVATIVE about reversibility: if unsure, mark reversible=false. " +
+    "authorityChanges = true ONLY for an EXPLICIT authority/privilege delegation or change — setAuthority, approve(delegate), close-authority, mint-authority transfer, or owner change. A plain SOL/SPL transfer, DEX swap, stake delegation, or mint-to-self does NOT change authority (mark false). If you are genuinely unsure whether authority changes, mark true. " +
+    "counterparties = external accounts the action sends funds or authority to. amountUsd = numeric USD value or null if unknown.";
   const user =
     `Action evidence:\n${evidence}\n\n` +
     `Return JSON with: kind (one of transfer|swap|authority_delegation|config|mint|burn|stake|close_account|unknown), counterparties[], mints[], authorityChanges (bool), reversible (bool), amountUsd (number|null), description (one-sentence summary).`;

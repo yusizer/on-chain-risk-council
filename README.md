@@ -79,24 +79,28 @@ shortcut lone-agent baseline (FailureDNA-style) so a win isn't just
 Results are written to `benchmark/results/bench-<timestamp>.json` and rendered
 on the `/benchmark` dashboard. Run `npm run bench` to regenerate.
 
-### Results (no-memory; 12 labelled actions: 6 malicious, 6 clean)
+### Results (no-memory; 14 labelled actions: 6 synthetic + 2 real malicious, 6 clean)
 
 | baseline | malRecall | falseApprove | falseReject | cleanApprove | accuracy | latency | tokens |
 |---|---|---|---|---|---|---|---|
-| lone-agent | 100% | 0% | 0% | 83% | 83% | 20.6s | 1.6k |
-| council-no-memory | 100% | 0% | 50% | 0% | 50% | 68.0s | 7.0k |
+| lone-agent (single qwen3.7-max, no guardrail) | 75% | **25%** | 0% | 100% | 79% | 21.5s | 1.8k |
+| council-no-memory (5 agents + cross-debate + guardrail) | **100%** | **0%** | 17% | 17% | 57% | 56.3s | 6.6k |
 
-Both arms hit 100% malicious recall / 0% false-approve on this synthetic set —
-`qwen3.7-max` is strong on obvious drainer descriptions. **The council's edge
-is the guaranteed safety floor**: the deterministic guardrail can never be
-talked into approving an irreversible action, so a harder or novel attack
-pattern cannot flip the outcome the way it could flip a lone agent. The
-council over-blocks clean actions (falseReject 50% vs 0%) — by design the
-guardrail escalates irreversible clean actions to human review (the held-back
-moment). That is the safety/throughput trade-off; the price is ~4.4× tokens
-and ~3.3× latency for a 5-agent society + cross-debate + referee. D4 (real
-exploit signatures + pgvector memory) targets nuanced attacks a text-only lone
-model misses, where the on-chain evidence + memory recall earn their keep.
+**The thesis row is `falseApprove`.** The lone wolf **false-approves both real
+Wormhole exploit signatures** (`r1`, `r2` → execute) — a single strong model
+with no safety floor green-lights a $325M on-chain exploit. The council catches
+both (`r1` → escalate, `r2` → reject) and hits **100% malicious recall / 0%
+false-approve**. That is the whole point of the deterministic guardrail over a
+multi-agent society: it can never be talked into approving an irreversible
+exploit the way a lone agent can.
+
+The trade-off is throughput: the council over-blocks clean actions (cleanApprove
+17% vs 100%; overEscalate 67%) because the guardrail escalates irreversible
+clean actions to human review by design — the held-back moment. For high-stakes
+on-chain review that is the correct trade: never approving a drainer matters
+more than never bothering a human. The price is ~3.6× tokens and ~2.6× latency
+for a 5-agent society + cross-debate + referee. D4 (pgvector memory) targets
+the nuanced attacks where on-chain evidence + recall earn even more.
 
 ## Submission checklist (Devpost)
 - [x] Public OSS repo + MIT license visible in About

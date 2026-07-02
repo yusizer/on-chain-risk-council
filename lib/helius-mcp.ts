@@ -81,9 +81,10 @@ export async function callHelius(
 
 /** Parse one or more transaction signatures into a human-readable description. */
 export async function parseTransactions(signatures: string[]): Promise<unknown> {
+  // heliusTransaction.parseTransactions takes `signatures` (array), NOT `transactions`.
   return callHelius("heliusTransaction", {
     action: "parseTransactions",
-    transactions: signatures,
+    signatures,
   });
 }
 
