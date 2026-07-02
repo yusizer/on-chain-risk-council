@@ -1,0 +1,43 @@
+/**
+ * POST /api/actions — submit an action for council review, get the Decision.
+ *
+ * Body (one of): { signature } | { serializedTx } | { intent } [, requester, network]
+ * Returns: Decision { outcome, unanimous, votes[], guardrail, tokens, latencyMs }
+ *
+ * For the live deliberation stream (SSE), use POST /api/stream instead.
+ */
+import { NextResponse } from "next/server";
+import { runCouncil } from "@/orchestrator/council";
+import { ActionInputSchema } from "@/lib/types";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+// Council runs multiple LLM + Helius calls; give it room.
+export const maxDuration = 60;
+
+export async function POST(request: Request) {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
+  }
+
+  const parsed = ActionInputSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "invalid action", detail: parsed.error.issues },
+      { status: 400 },
+    );
+  }
+
+  try {
+    const decision = await runCouncil(parsed.data);
+    return NextResponse.json(decision);
+  } catch (e) {
+    return NextResponse.json(
+      { error: "council failed", detail: String(e) },
+      { status: 500 },
+    );
+  }
+}
