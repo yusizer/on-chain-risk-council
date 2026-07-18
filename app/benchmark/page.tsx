@@ -9,6 +9,8 @@
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import Link from "next/link";
+import { DATASET } from "@/benchmark/dataset";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +23,7 @@ interface Metrics {
   falseRejectRate: number;
   overEscalateRate: number;
   cleanApproveRate: number;
+  errorRate?: number;
   accuracy: number;
   meanLatencyMs: number;
   meanTokens: number;
@@ -44,6 +47,7 @@ interface BaselineResult {
 }
 interface BenchData {
   timestamp: string;
+  artifact?: string;
   withMemory: boolean;
   datasetSize: number;
   results: Record<string, BaselineResult>;
@@ -57,7 +61,8 @@ function loadLatest(): BenchData | null {
     .sort();
   if (files.length === 0) return null;
   try {
-    return JSON.parse(readFileSync(join(dir, files[files.length - 1]), "utf8")) as BenchData;
+    const artifact = files[files.length - 1];
+    return { ...JSON.parse(readFileSync(join(dir, artifact), "utf8")), artifact } as BenchData;
   } catch {
     return null;
   }
@@ -69,6 +74,7 @@ const OUTCOME_CELL: Record<string, string> = {
   execute: "bg-emerald-500/15 text-emerald-400",
   escalate: "bg-amber-500/15 text-amber-400",
   reject: "bg-rose-500/15 text-rose-400",
+  error: "bg-zinc-500/15 text-zinc-300",
 };
 
 const METRIC_COLS: { key: keyof Metrics; label: string; better: "up" | "down"; fmt: (m: Metrics) => string }[] = [
@@ -77,6 +83,7 @@ const METRIC_COLS: { key: keyof Metrics; label: string; better: "up" | "down"; f
   { key: "falseRejectRate", label: "falseReject", better: "down", fmt: (m) => pct(m.falseRejectRate) },
   { key: "overEscalateRate", label: "overEscalate", better: "down", fmt: (m) => pct(m.overEscalateRate) },
   { key: "cleanApproveRate", label: "cleanApprove", better: "up", fmt: (m) => pct(m.cleanApproveRate) },
+  { key: "errorRate", label: "errors", better: "down", fmt: (m) => pct(m.errorRate ?? 0) },
   { key: "accuracy", label: "accuracy", better: "up", fmt: (m) => pct(m.accuracy) },
   { key: "meanLatencyMs", label: "latency", better: "down", fmt: (m) => `${m.meanLatencyMs}ms` },
   { key: "meanTokens", label: "tokens", better: "down", fmt: (m) => `${m.meanTokens}` },
@@ -86,7 +93,7 @@ const METRIC_COLS: { key: keyof Metrics; label: string; better: "up" | "down"; f
 function bestPerCol(data: BenchData): Record<string, number> {
   const best: Record<string, number> = {};
   for (const col of METRIC_COLS) {
-    const vals = Object.values(data.results).map((r) => r.metrics[col.key] as number);
+    const vals = Object.values(data.results).map((r) => (r.metrics[col.key] ?? 0) as number);
     if (!vals.length) continue;
     best[col.key] = col.better === "up" ? Math.max(...vals) : Math.min(...vals);
   }
@@ -113,6 +120,10 @@ export default function BenchmarkPage() {
   const best = bestPerCol(data);
   const baselineNames = Object.keys(data.results);
   const actions = baselineNames.length ? data.results[baselineNames[0]].actions : [];
+  const staleArtifact = data.datasetSize !== DATASET.length;
+  const actionMaps: Record<string, Map<string, ActionResult>> = Object.fromEntries(
+    baselineNames.map((name) => [name, new Map(data.results[name].actions.map((a) => [a.id, a]))]),
+  );
 
   return (
     <div className="min-h-full bg-zinc-950 text-zinc-100">
@@ -125,17 +136,37 @@ export default function BenchmarkPage() {
             </p>
           </div>
           <nav className="flex gap-4 text-sm">
-            <a href="/" className="text-zinc-400 underline-offset-4 hover:underline">
+            <Link href="/" className="text-zinc-400 underline-offset-4 hover:underline">
               Chamber
-            </a>
-            <a href="/benchmark" className="text-zinc-300 underline-offset-4 hover:underline">
+            </Link>
+            <Link href="/benchmark" className="text-zinc-300 underline-offset-4 hover:underline">
               Benchmark
-            </a>
+            </Link>
           </nav>
         </div>
       </header>
 
       <main className="mx-auto max-w-5xl px-6 py-8">
+        <section className="mb-6 rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-emerald-300">
+            Safety benchmark
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-zinc-300">
+            For a pre-signing risk gate, <code className="font-mono">falseApprove</code> is the catastrophic metric:
+            executing a malicious irreversible transaction. Escalation counts as safe because it sends the action to a human
+            instead of signing. Latest artifact: <code className="font-mono text-emerald-200">{data.artifact ?? "benchmark/results"}</code>.
+          </p>
+        </section>
+
+        {staleArtifact ? (
+          <section className="mb-6 rounded-xl border border-amber-400/30 bg-amber-400/10 p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-amber-300">Stale benchmark artifact</h2>
+            <p className="mt-2 text-sm leading-6 text-zinc-300">
+              Latest artifact has {data.datasetSize} actions, but the current source dataset has {DATASET.length}. Run <code className="font-mono">npm run bench</code> before using final numbers.
+            </p>
+          </section>
+        ) : null}
+
         {/* Metrics table */}
         <section>
           <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-zinc-500">
@@ -162,7 +193,8 @@ export default function BenchmarkPage() {
                       <td className="p-3 font-mono text-xs text-zinc-200">{name}</td>
                       {METRIC_COLS.map((c) => {
                         const val = c.fmt(m);
-                        const isBest = m[c.key] === best[c.key];
+                        const metricValue = (m[c.key] ?? 0) as number;
+                        const isBest = metricValue === best[c.key];
                         return (
                           <td
                             key={c.key}
@@ -206,7 +238,7 @@ export default function BenchmarkPage() {
                 </tr>
               </thead>
               <tbody>
-                {actions.map((a, i) => (
+                {actions.map((a) => (
                   <tr key={a.id} className="border-t border-white/5">
                     <td className="p-3 font-mono text-xs text-zinc-200">{a.id}</td>
                     <td className="p-3 font-mono text-xs">
@@ -216,12 +248,14 @@ export default function BenchmarkPage() {
                     </td>
                     <td className="p-3 font-mono text-xs text-zinc-500">{a.expected}</td>
                     {baselineNames.map((n) => {
-                      const r = data.results[n].actions[i];
+                      const r = actionMaps[n].get(a.id);
+                      const outcomeClass = r ? OUTCOME_CELL[r.outcome] : undefined;
                       return (
                         <td key={n} className="p-3 text-right">
-                          <span className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-bold ${OUTCOME_CELL[r?.outcome] ?? "text-zinc-600"}`}>
+                          <span className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-bold ${outcomeClass ?? "text-zinc-600"}`}>
                             {r?.outcome ?? "?"}
                           </span>
+                          {r?.heldBack ? <span className="ml-1 font-mono text-[10px] text-amber-300">held</span> : null}
                         </td>
                       );
                     })}

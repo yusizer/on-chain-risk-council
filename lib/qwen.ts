@@ -14,6 +14,7 @@ import { z } from "zod";
 const BASE_URL =
   process.env.QWEN_BASE_URL ??
   "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
+const QWEN_TIMEOUT_MS = Number(process.env.QWEN_TIMEOUT_MS ?? 60_000);
 
 const apiKey = process.env.DASHSCOPE_API_KEY;
 if (!apiKey && process.env.NODE_ENV !== "test") {
@@ -75,6 +76,26 @@ export function addUsage(budget: TokenBudget | undefined, role: Role, usage: Usa
   budget.byRole[role] = (budget.byRole[role] ?? 0) + t;
 }
 
+function requireApiKey(): void {
+  if (!apiKey) throw new Error("DASHSCOPE_API_KEY not set");
+}
+
+function requestOptions(): { signal?: AbortSignal } {
+  if (!Number.isFinite(QWEN_TIMEOUT_MS) || QWEN_TIMEOUT_MS <= 0) return {};
+  return { signal: AbortSignal.timeout(QWEN_TIMEOUT_MS) };
+}
+
+function parseJsonContent(content: string): unknown {
+  try {
+    return JSON.parse(content);
+  } catch {
+    const start = content.indexOf("{");
+    const end = content.lastIndexOf("}");
+    if (start >= 0 && end > start) return JSON.parse(content.slice(start, end + 1));
+    throw new Error(`Qwen returned non-JSON content: ${content.slice(0, 160)}`);
+  }
+}
+
 /**
  * Run a chat completion with structured JSON output (validated by a zod schema).
  * Returns the parsed object + token usage — agents must produce well-typed
@@ -84,18 +105,22 @@ export async function chatJSON<T>(
   role: Role,
   messages: Msg[],
   schema: z.ZodType<T>,
-  opts: { temperature?: number; maxTokens?: number; tools?: any[] } = {},
+  opts: { temperature?: number; maxTokens?: number; tools?: OpenAI.Chat.Completions.ChatCompletionTool[] } = {},
 ): Promise<LLMResult<T>> {
-  const completion = await qwen.chat.completions.create({
-    model: MODELS[role],
-    messages,
-    temperature: opts.temperature ?? 0,
-    max_tokens: opts.maxTokens ?? 2048,
-    response_format: { type: "json_object" },
-    tools: opts.tools,
-  });
+  requireApiKey();
+  const completion = await qwen.chat.completions.create(
+    {
+      model: MODELS[role],
+      messages,
+      temperature: opts.temperature ?? 0,
+      max_tokens: opts.maxTokens ?? 2048,
+      response_format: { type: "json_object" },
+      tools: opts.tools,
+    },
+    requestOptions(),
+  );
   const content = completion.choices[0]?.message?.content ?? "{}";
-  const parsed = JSON.parse(content);
+  const parsed = parseJsonContent(content);
   return { value: schema.parse(parsed), usage: completion.usage as Usage };
 }
 
@@ -105,34 +130,46 @@ export async function chatText(
   messages: Msg[],
   opts: { temperature?: number; maxTokens?: number } = {},
 ): Promise<LLMResult<string>> {
-  const completion = await qwen.chat.completions.create({
-    model: MODELS[role],
-    messages,
-    temperature: opts.temperature ?? 0,
-    max_tokens: opts.maxTokens ?? 1024,
-  });
+  requireApiKey();
+  const completion = await qwen.chat.completions.create(
+    {
+      model: MODELS[role],
+      messages,
+      temperature: opts.temperature ?? 0,
+      max_tokens: opts.maxTokens ?? 1024,
+    },
+    requestOptions(),
+  );
   return { value: completion.choices[0]?.message?.content ?? "", usage: completion.usage as Usage };
 }
 
 /** Embed text for the pgvector exploit-pattern memory. */
 export async function embed(text: string): Promise<number[]> {
-  const res = await qwen.embeddings.create({
-    model: MODELS.embedding,
-    input: text,
-    dimensions: 1024,
-  });
+  requireApiKey();
+  const res = await qwen.embeddings.create(
+    {
+      model: MODELS.embedding,
+      input: text,
+      dimensions: 1024,
+    },
+    requestOptions(),
+  );
   return res.data[0]?.embedding ?? [];
 }
 
 /** Self-test: a one-token hello call to verify the key + endpoint. */
 export async function ping(): Promise<{ ok: boolean; model: string; reply: string }> {
+  if (!apiKey) return { ok: false, model: MODELS.fast, reply: "DASHSCOPE_API_KEY not set" };
   try {
-    const r = await qwen.chat.completions.create({
-      model: MODELS.fast,
-      messages: [{ role: "user", content: "Reply with the single word: ok" }],
-      max_tokens: 5,
-      temperature: 0,
-    });
+    const r = await qwen.chat.completions.create(
+      {
+        model: MODELS.fast,
+        messages: [{ role: "user", content: "Reply with the single word: ok" }],
+        max_tokens: 5,
+        temperature: 0,
+      },
+      requestOptions(),
+    );
     return { ok: true, model: MODELS.fast, reply: r.choices[0]?.message?.content ?? "" };
   } catch (e) {
     return { ok: false, model: MODELS.fast, reply: String(e) };

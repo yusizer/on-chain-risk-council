@@ -23,12 +23,12 @@ import {
   type Vote,
 } from "@/lib/types";
 
-// Demo policy. In production these come from a config store / sanctions feed.
-// Left empty by default so the deterministic path is exercised without false
-// positives; D4 can wire real addresses/mints from the exploit dataset.
-const BLOCKED_COUNTERPARTIES = new Set<string>([]);
-const BLOCKED_MINTS = new Set<string>([]);
-const MAX_AMOUNT_USD = 10_000;
+import {
+  MAX_AMOUNT_USD,
+  descriptionPolicyHit,
+  isBlockedCounterparty,
+  isBlockedMint,
+} from "@/lib/policySeeds";
 
 const RANK: Record<Vote, number> = { execute: 0, escalate: 1, reject: 2 };
 
@@ -47,18 +47,24 @@ export async function compliance(
 
   // 1. Deterministic rule checks (the floor — never overridden by the LLM).
   for (const addr of record.counterparties) {
-    if (BLOCKED_COUNTERPARTIES.has(addr)) {
+    if (isBlockedCounterparty(addr)) {
       vote = "reject";
-      flags.push("blocked_counterparty");
-      evidence.push(`counterparty ${addr} is on the blocked/sanctions list`);
+      flags.push("blocked_counterparty", "blocking_flag");
+      evidence.push(`counterparty ${addr} matches blocked/sanctions policy`);
     }
   }
   for (const m of record.mints) {
-    if (BLOCKED_MINTS.has(m)) {
+    if (isBlockedMint(m)) {
       vote = "reject";
-      flags.push("blocked_mint");
+      flags.push("blocked_mint", "blocking_flag");
       evidence.push(`mint ${m} is on the blocked-mint list`);
     }
+  }
+  const descHit = descriptionPolicyHit(record.description);
+  if (descHit) {
+    vote = "reject";
+    flags.push("policy_pattern_hit", "blocking_flag");
+    evidence.push(`description matched policy pattern: ${descHit}`);
   }
   if (record.amountUsd != null && record.amountUsd >= MAX_AMOUNT_USD) {
     if (RANK[vote] < RANK.escalate) vote = "escalate";
@@ -84,7 +90,8 @@ export async function compliance(
       "You are the Compliance officer of an on-chain (Solana) risk council. Check the action against policy: " +
       "sanctioned/blocked counterparties, blocked mints, max-amount cap, authority-change policy, sanctioned or unverified programs. " +
       "If a policy violation is present, vote reject (clear) or escalate (needs review) and add flag \"blocking_flag\" for a clear violation. " +
-      "Otherwise vote execute. Keep reasoning to one sentence.";
+      "Otherwise vote execute. NOTE: staking SOL (delegate to a validator) is non-custodial and not a fund transfer — amount alone is not a policy violation. " +
+      "Keep reasoning to one sentence.";
     const user =
       `Trusted action record:\n${JSON.stringify(record, null, 2)}\n\n` +
       `Return JSON: {agent:"compliance", vote, confidence, reasoning, evidence[], flags[]}.`;

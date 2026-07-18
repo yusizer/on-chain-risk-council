@@ -9,11 +9,12 @@
 import { NextResponse } from "next/server";
 import { runCouncil } from "@/orchestrator/council";
 import { ActionInputSchema } from "@/lib/types";
+import { acquireCouncilSlot, checkCouncilAccess, councilGateStatus } from "@/lib/councilGate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 // Council runs multiple LLM + Helius calls; give it room.
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function POST(request: Request) {
   let body: unknown;
@@ -31,13 +32,28 @@ export async function POST(request: Request) {
     );
   }
 
+  const access = checkCouncilAccess(request);
+  if (!access.ok) {
+    return NextResponse.json(access.body, { status: access.status });
+  }
+
+  const release = acquireCouncilSlot();
+  if (!release) {
+    return NextResponse.json(
+      { error: "council busy", detail: councilGateStatus() },
+      { status: 429 },
+    );
+  }
+
   try {
-    const decision = await runCouncil(parsed.data);
+    const decision = await runCouncil(parsed.data, undefined, { signal: request.signal });
     return NextResponse.json(decision);
   } catch (e) {
     return NextResponse.json(
       { error: "council failed", detail: String(e) },
       { status: 500 },
     );
+  } finally {
+    release();
   }
 }

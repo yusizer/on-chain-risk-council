@@ -13,10 +13,11 @@
  */
 import { runCouncil } from "@/orchestrator/council";
 import { ActionInputSchema, type CouncilEvent } from "@/lib/types";
+import { acquireCouncilSlot, checkCouncilAccess, councilGateStatus } from "@/lib/councilGate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function POST(request: Request) {
   let body: unknown;
@@ -34,20 +35,41 @@ export async function POST(request: Request) {
     });
   }
   const action = parsed.data;
+  const access = checkCouncilAccess(request);
+  if (!access.ok) {
+    return new Response(JSON.stringify(access.body), {
+      status: access.status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  const release = acquireCouncilSlot();
+  if (!release) {
+    return new Response(JSON.stringify({ error: "council busy", detail: councilGateStatus() }), {
+      status: 429,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (obj: unknown) =>
+      const send = (obj: unknown) => {
+        if (request.signal.aborted) throw new Error("client disconnected");
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+      };
       const emit = (e: CouncilEvent) => send(e);
       try {
-        const decision = await runCouncil(action, emit);
+        const decision = await runCouncil(action, emit, { signal: request.signal });
         send({ step: "decision", status: "done", data: decision });
       } catch (e) {
-        send({ step: "council", status: "error", message: String(e) });
+        if (!request.signal.aborted) send({ step: "council", status: "error", message: String(e) });
       } finally {
-        controller.close();
+        release();
+        try {
+          controller.close();
+        } catch {
+          // Client already disconnected.
+        }
       }
     },
   });

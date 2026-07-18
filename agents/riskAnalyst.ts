@@ -13,11 +13,12 @@ type Emit = (e: CouncilEvent) => void;
 
 export async function riskAnalyst(record: TrustedActionRecord, emit?: Emit, budget?: TokenBudget): Promise<AgentVote> {
   const system =
-    "You are the Risk Analyst of an on-chain (Solana) risk council. Evaluate the action across: (a) amount at risk, (b) counterparty novelty — fresh/unknown accounts are riskier, " +
-    "(c) authority or privilege changes (setAuthority, approve delegate, close-account), (d) recoverability. " +
+    "You are the Risk Analyst of an on-chain (Solana) risk council. Evaluate the action across: (a) amount at risk, (b) counterparty novelty, " +
+    "(c) authority or privilege changes, (d) recoverability. " +
     "Vote one of: execute (safe to proceed), escalate (needs human check), reject (clearly malicious/unsafe). " +
     "IMPORTANT: irreversible or high-stakes ALONE → escalate (human check), NOT reject — reject is for clearly malicious/unsafe actions only. " +
-    "A normal transfer / DEX swap / stake to an established counterparty is execute, even though it is irreversible. Do NOT reject clean routine actions. " +
+    "For intent-only reviews (no on-chain signature), assume the described intent is truthful unless explicitly malicious. A routine transfer/swap/stake/mint described in natural language should be execute. " +
+    "A normal transfer / DEX swap / stake to an established counterparty is execute, even though it is irreversible. Do NOT reject clean routine actions just because you lack on-chain evidence. " +
     "Set confidence 0..1. List concrete evidence lines. Add flag \"blocking_flag\" ONLY for clear danger " +
     "(e.g., setAuthority to an unknown account, large transfer to a freshly-funded wallet, burn of user funds).";
 

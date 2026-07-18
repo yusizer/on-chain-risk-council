@@ -8,6 +8,7 @@
  *   falseRejectRate    — reject on clean / total clean                       [↓]
  *   overEscalateRate   — escalate on clean / total clean                     [↓]
  *   cleanApproveRate   — execute on clean / total clean                      [↑]
+ *   errorRate          — benchmark runner/model/tool failures / total        [↓]
  *   accuracy           — (clean execute + malicious reject) / total
  *   meanLatencyMs, meanTokens
  *
@@ -21,11 +22,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DATASET } from "@/benchmark/dataset";
-import { selectBaselines } from "@/benchmark/baselines";
-import { ensureSchema } from "@/lib/db";
-import { seedExploits } from "@/lib/exploitSeeds";
-import { closeHelius } from "@/lib/helius-mcp";
+import type { BenchmarkAction } from "@/benchmark/dataset";
 import type { Decision } from "@/lib/types";
 
 interface ActionResult {
@@ -39,6 +36,7 @@ interface ActionResult {
   votes: string;
   tokens: number;
   latencyMs: number;
+  error?: string;
 }
 
 interface Metrics {
@@ -49,6 +47,7 @@ interface Metrics {
   falseRejectRate: number;
   overEscalateRate: number;
   cleanApproveRate: number;
+  errorRate: number;
   accuracy: number;
   meanLatencyMs: number;
   meanTokens: number;
@@ -63,7 +62,7 @@ interface BaselineResult {
 const mean = (xs: number[]) => (xs.length ? Math.round(xs.reduce((s, x) => s + x, 0) / xs.length) : 0);
 const pct = (n: number) => `${(n * 100).toFixed(0)}%`;
 
-function computeMetrics(actions: ActionResult[]): Metrics {
+export function computeMetrics(actions: ActionResult[]): Metrics {
   const mal = actions.filter((a) => a.label === "malicious");
   const clean = actions.filter((a) => a.label === "clean");
   const malReject = mal.filter((a) => a.outcome === "reject").length;
@@ -72,6 +71,7 @@ function computeMetrics(actions: ActionResult[]): Metrics {
   const cleanApprove = clean.filter((a) => a.outcome === "execute").length;
   const cleanReject = clean.filter((a) => a.outcome === "reject").length;
   const cleanEscalate = clean.filter((a) => a.outcome === "escalate").length;
+  const errors = actions.filter((a) => a.outcome === "error" || a.error).length;
   return {
     maliciousTotal: mal.length,
     cleanTotal: clean.length,
@@ -80,13 +80,14 @@ function computeMetrics(actions: ActionResult[]): Metrics {
     falseRejectRate: clean.length ? cleanReject / clean.length : 0,
     overEscalateRate: clean.length ? cleanEscalate / clean.length : 0,
     cleanApproveRate: clean.length ? cleanApprove / clean.length : 0,
+    errorRate: actions.length ? errors / actions.length : 0,
     accuracy: actions.length ? (cleanApprove + malReject) / actions.length : 0,
     meanLatencyMs: mean(actions.map((a) => a.latencyMs)),
     meanTokens: mean(actions.map((a) => a.tokens)),
   };
 }
 
-function toResult(a: (typeof DATASET)[number], d: Decision): ActionResult {
+function toResult(a: BenchmarkAction, d: Decision): ActionResult {
   return {
     id: a.id,
     label: a.label,
@@ -101,9 +102,25 @@ function toResult(a: (typeof DATASET)[number], d: Decision): ActionResult {
   };
 }
 
-function printTable(results: Record<string, BaselineResult>): void {
+function toErrorResult(a: BenchmarkAction, err: unknown, latencyMs: number): ActionResult {
+  return {
+    id: a.id,
+    label: a.label,
+    category: a.category,
+    expected: a.expected,
+    outcome: "error",
+    unanimous: false,
+    heldBack: false,
+    votes: "runner:error",
+    tokens: 0,
+    latencyMs,
+    error: String(err).slice(0, 300),
+  };
+}
+
+function printTable(results: Record<string, BaselineResult>, dataset: BenchmarkAction[]): void {
   console.log("\n=== METRICS ===");
-  const cols = ["malRecall", "falseAppr", "falseRej", "overEscal", "cleanAppr", "accuracy", "latency", "tokens"];
+  const cols = ["malRecall", "falseAppr", "falseRej", "overEscal", "cleanAppr", "errors", "accuracy", "latency", "tokens"];
   console.log("baseline".padEnd(20) + cols.map((c) => c.padStart(10)).join(""));
   for (const [name, r] of Object.entries(results)) {
     const m = r.metrics;
@@ -113,6 +130,7 @@ function printTable(results: Record<string, BaselineResult>): void {
       pct(m.falseRejectRate),
       pct(m.overEscalateRate),
       pct(m.cleanApproveRate),
+      pct(m.errorRate),
       pct(m.accuracy),
       `${m.meanLatencyMs}ms`,
       `${m.meanTokens}`,
@@ -124,13 +142,13 @@ function printTable(results: Record<string, BaselineResult>): void {
   // Per-action comparison across arms.
   console.log("\n=== PER-ACTION ===");
   const names = Object.keys(results);
-  for (const a of DATASET) {
+  for (const a of dataset) {
     const cells = names.map((n) => results[n].actions.find((x) => x.id === a.id)?.outcome ?? "?");
     console.log(`  ${a.id.padEnd(26)} [${a.label.padEnd(9)}] exp=${a.expected.padEnd(8)} ${names.map((n, i) => `${n.split("-")[0]}:${cells[i]}`).join("  ")}`);
   }
 }
 
-function saveJson(results: Record<string, BaselineResult>, withMemory: boolean): string {
+function saveJson(results: Record<string, BaselineResult>, withMemory: boolean, datasetSize: number): string {
   const here = dirname(fileURLToPath(import.meta.url));
   const outDir = join(here, "results");
   mkdirSync(outDir, { recursive: true });
@@ -139,7 +157,7 @@ function saveJson(results: Record<string, BaselineResult>, withMemory: boolean):
   const payload = {
     timestamp: new Date().toISOString(),
     withMemory,
-    datasetSize: DATASET.length,
+    datasetSize,
     results,
   };
   writeFileSync(file, JSON.stringify(payload, null, 2));
@@ -147,11 +165,19 @@ function saveJson(results: Record<string, BaselineResult>, withMemory: boolean):
 }
 
 async function main(): Promise<void> {
+  const [{ DATASET }, { selectBaselines }] = await Promise.all([
+    import("@/benchmark/dataset"),
+    import("@/benchmark/baselines"),
+  ]);
   const withMemory = !!process.env.DATABASE_URL;
   console.log(`=== ON-CHAIN RISK COUNCIL — BENCHMARK ===`);
   console.log(`memory: ${withMemory ? "ON (council-full included)" : "OFF (council-full skipped — no DATABASE_URL)"}`);
 
   if (withMemory) {
+    const [{ ensureSchema }, { seedExploits }] = await Promise.all([
+      import("@/lib/db"),
+      import("@/lib/exploitSeeds"),
+    ]);
     console.log("[db] ensuring schema + seeding exploit patterns…");
     try {
       await ensureSchema();
@@ -181,16 +207,8 @@ async function main(): Promise<void> {
         decision = await b.run(a.action);
       } catch (e) {
         console.log(`  ${a.id.padEnd(26)} ERROR ${String(e).slice(0, 160)}`);
-        // Treat a crash as a fail-soft escalate (never silently approve).
-        decision = {
-          outcome: "escalate",
-          unanimous: false,
-          votes: [],
-          guardrail: { outcome: "escalate", heldBack: false, reason: `runner error: ${String(e).slice(0, 120)}`, rules: [] },
-          tokens: 0,
-          latencyMs: Date.now() - t0,
-          malicious: null,
-        };
+        actions.push(toErrorResult(a, e, Date.now() - t0));
+        continue;
       }
       const r = toResult(a, decision);
       actions.push(r);
@@ -199,16 +217,23 @@ async function main(): Promise<void> {
     results[b.name] = { description: b.description, metrics: computeMetrics(actions), actions };
   }
 
-  printTable(results);
-  const file = saveJson(results, withMemory);
+  printTable(results, DATASET);
+  const file = saveJson(results, withMemory, DATASET.length);
   console.log(`\nresults written: ${file}`);
 }
 
-main()
-  .catch((e) => {
-    console.error("BENCH FAIL:", e);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await closeHelius();
-  });
+async function closeRunnerResources(): Promise<void> {
+  const { closeHelius } = await import("@/lib/helius-mcp");
+  await closeHelius();
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  main()
+    .catch((e) => {
+      console.error("BENCH FAIL:", e);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await closeRunnerResources();
+    });
+}

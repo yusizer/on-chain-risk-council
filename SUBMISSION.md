@@ -1,110 +1,82 @@
 # Devpost submission text — On-Chain Risk Council
 
-*Paste into the Devpost submission form. Replace {{...}} placeholders before
-submitting. Track: 3 — Agent Society.*
+*Paste into the Devpost submission form. Track: 3 — Agent Society.*
 
 ---
 
 ## Title
-On-Chain Risk Council — a multi-agent society that reviews Solana actions before they execute
+On-Chain Risk Council — multi-agent society that reviews Solana actions before they execute
 
 ## One-liner
-A council of specialised Qwen agents deliberates over high-stakes Solana
-transactions; a deterministic one-way-ratchet guardrail — keyed off on-chain
-data, never model output — makes the final call. Consensus is necessary, never
-sufficient.
+Specialised Qwen agents deliberate over high-stakes Solana transactions; a deterministic one-way-ratchet guardrail and a tamper-evident hash-chain audit log make the final call. Consensus is necessary, never sufficient.
 
 ## What it does
-Solana drainers and exploiters cost users hundreds of millions a year. Asking
-a single LLM "is this tx safe?" fails two ways: it confidently approves
-irreversible attacks it has never seen, and there is no hard safety floor. The
-On-Chain Risk Council fixes both:
 
-- A **society of specialists** — Risk Analyst (`qwen3.7-max`), Exploit Skeptic
-  (`qwen3-coder-plus` + Helius MCP on-chain evidence), Compliance/Policy
-  (deterministic rules), Simulator (Helius `simulateTransaction` fork-sim),
-  Referee (`qwen3.7-max`, votes last) — covers blind spots no single agent has.
-- A **deterministic guardrail** reads stakes + reversibility from a *trusted*
-  action record (derived from parsed on-chain data, not model output) and can
-  only make the outcome **safer**. A unanimously-approved irreversible action
-  is still held back for a human.
-- **Double MCP**: the council *consumes* the Helius MCP server for on-chain
-  evidence and *exposes itself* as an MCP server (`submitAction`,
-  `getDecision`, `getBenchmark`) so any AI client — Claude, Cursor, a wallet
-  agent — can request reviews.
+Wallet drainers have caused nine-figure losses. A single LLM asked "is this tx safe?" has **no safety floor** — one prompt injection or hallucination bypasses it entirely.
 
-Live deliberation streams over SSE in a council-chamber UI; a benchmark
-dashboard compares the council against a lone-agent baseline.
+**On-Chain Risk Council** is a Track 3 Agent Society built for real Solana risk.
+The council catches exploits, but the **real innovation** is the architectural
+guarantees no lone model can provide:
+
+1. **Role division** — Intake, Risk Analyst, Exploit Skeptic (Helius MCP + pgvector exploit memory), Compliance (deterministic policy), Simulator (fork-sim), Referee (votes last).
+2. **Dialogue / conflict resolution** — parallel specialist votes → **cross-debate revision** (monotonic safety floor) → referee arbitration when agents disagree. The UI surfaces "conflict resolved" with the vote split.
+3. **Deterministic guardrail** — the final decision is *code, not LLM*. One-way ratchet: can only make outcomes safer. Irreversible actions held back even on unanimous approve.
+4. **Human-in-the-loop** — high-stakes / authority / low-confidence / blocking flags escalate to human review. Low-stakes routine transfers use a **routine corridor** so the system stays usable.
+5. **Double MCP** — consumes Helius for on-chain evidence; exposes `submitAction` / `getDecision` / `getBenchmark` so wallets and agents plug in.
+6. **Tamper-evident audit** — every decision is hash-chained (`GET /api/audit`); rewriting a past outcome breaks verification.
+7.  **Benchmark** — 19 labelled actions (incl. real Wormhole/Cashio signatures). Council **malRecall 100%, falseApprove 0%, accuracy 95%**. Lone agent (no guardrail) malRecall 60%, falseApprove **40%** — green-lights 4 of 4 real Wormhole/Cashio signatures. Real exploit signatures (Wormhole $325M, Cashio $48M) auto-rejected by deterministic guardrail — not by LLM reasoning. Lone agent is fast but provides **zero** of the guarantees above.
+
+Live chamber streams deliberation over SSE. Benchmark dashboard compares baselines honestly.
 
 ## How we built it
-Next.js 16 (App Router) + TypeScript + Tailwind. Qwen Cloud via the DashScope
-OpenAI-compatible endpoint (multi-model: `qwen3.7-max` / `qwen3-coder-plus` /
-`qwen-turbo` / `text-embedding-v3`). Helius MCP over stdio for on-chain data
-(parseTransactions, getAccountInfo, getWalletFundedBy, simulateTransaction).
-Alibaba Cloud RDS PostgreSQL + pgvector for an exploit-pattern memory and a
-decisions audit log; deployed on Alibaba ECS (Docker). The council orchestrator
-runs intake → 3 specialists ‖ simulator → a cross-debate revision round →
-referee → guardrail, emitting an SSE event stream and totaling token usage
-through a concurrent-safe budget.
 
-## Benchmark
-Honest comparison vs a shortcut lone-agent baseline (single `qwen3.7-max`, no
-council, no guardrail) over a labelled set of clean + malicious Solana actions.
-Metrics: malicious recall, false-approve, false-reject, over-escalate,
-clean-approve, accuracy, latency, token cost.
+Next.js 16 + TypeScript + Tailwind. Qwen Cloud via DashScope (`qwen3.7-max`, `qwen3-coder-plus`, `qwen-turbo`, `text-embedding-v3`). Helius MCP over stdio. PostgreSQL + pgvector on Alibaba ECS. Deterministic Solana extraction (`@solana/web3.js`) feeds the guardrail so free-text cannot unlock irreversible actions. Orchestrator: intake → specialists ‖ sim → cross-debate → referee → guardrail → audit hash.
 
-| baseline | malRecall | falseApprove | falseReject | cleanApprove | accuracy | latency | tokens |
-|---|---|---|---|---|---|---|---|
-| lone-agent (single qwen3.7-max, no guardrail) | 75% | **25%** | 0% | 100% | 79% | 21.5s | 1.8k |
-| council-no-memory (5 agents + cross-debate + guardrail) | **100%** | **0%** | 17% | 17% | 57% | 56.3s | 6.6k |
+## Challenges
 
-The thesis row: **council `falseApprove` = 0% vs lone-agent 25%**. The dataset
-includes 2 real on-chain Wormhole exploit signatures ($325M bridge hack). The
-lone wolf **false-approves both real Wormhole signatures** — a single strong
-model with no safety floor green-lights an actual exploit. The council catches
-both (`r1` → escalate, `r2` → reject) and hits 100% malicious recall / 0%
-false-approve. That is the deterministic-guardrail-over-society thesis: it can
-never be talked into approving an irreversible exploit. Trade-off: the council
-over-blocks clean (cleanApprove 17% vs 100%) — the guardrail escalates
-irreversible clean actions to human review by design (the held-back moment).
-For high-stakes on-chain review, never approving a drainer matters more than
-never bothering a human. ~3.6× tokens, ~2.6× latency. pgvector memory (D4)
-targets even more nuanced attacks.
+- Helius MCP telemetry params (`_feedback` / `_feedbackTool` / `_model`) — empty strings fail with -32602.
+- Over-blocking clean actions — fixed by “reject only on positive exploit signal” + routine corridor for low-stakes transfers.
+- Social-engineering “this is refundable” — `reversible` is derived only from trusted structure, never user claims.
 
-## Challenges we ran into
-- **Helius MCP telemetry footgun**: every routed tool requires `_feedback` /
-  `_feedbackTool` / `_model` (minLength 1) — an empty `_feedback:""` returns
-  MCP `-32602` and looks like a missing-param error. Documented in-code for
-  the next integrator.
-- **Over-blocking clean actions**: an under-tuned exploit skeptic rejects clean
-  routine actions (normal transfers, swaps) from *absence* of evidence. The
-  biggest lever was prompting "reject only on a *positive* exploit signal" —
-  a safety system that blocks everything is safe and useless.
-- **Orphan subprocesses**: `npx helius-mcp` isn't killed on Node exit and
-  accumulates orphans that block new spawns; added `closeHelius()` cleanup.
+## Accomplishments
+
+- Deterministic guardrail that no LLM agent can talk past — irreversible actions always held back.
+- Live Alibaba ECS deployment with Qwen + Helius + pgvector all green.
+- Productizable MCP server + hash-chain audit (ClearCrew-class integrity for decisions).
 
 ## What we learned
-A deterministic guardrail over LLM votes beats a lone strong model on safety,
-*if* the agents are tuned to reject on positive signals rather than on
-uncertainty. The society's value is the safety floor + perspective diversity,
-not raw accuracy on obvious cases (a strong lone model catches obvious
-drainers too — the hard cases are the nuanced ones, where on-chain evidence +
-memory earn their keep).
+
+A multi-agent society earns its keep on **nuanced** cases and **evidence**, not on obvious drainers a strong lone model already catches. The hard floor must be code; the society supplies perspectives and conflict resolution the floor cannot invent.
 
 ## What's next
-Real exploit signatures in pgvector memory, Alibaba Cloud deploy + proof
-recording, a 3-min demo video, and a dev.to build-in-public post.
+
+More real exploit signatures in pgvector, wallet browser extension that calls the council MCP before sign, and continuous bench on new mainnet drainers.
 
 ## Built with
-Qwen Cloud (DashScope) · Helius MCP · Alibaba Cloud RDS pgvector + ECS ·
-Next.js 16 · TypeScript · @modelcontextprotocol/sdk.
+
+Qwen Cloud (DashScope) · Helius MCP · Alibaba Cloud ECS + pgvector · Next.js 16 · TypeScript · @modelcontextprotocol/sdk · @solana/web3.js
 
 ## Links
-- **Repo:** {{REPO_URL}}
-- **Demo video:** {{DEMO_VIDEO_URL}}
-- **Architecture diagram:** `ARCHITECTURE.md` (mermaid)
-- **Live demo:** {{LIVE_URL}} (Alibaba ECS, D7)
-- **dev.to post:** {{BLOG_URL}}
+
+- **Repo:** https://github.com/yusizer/on-chain-risk-council
+- **Demo video:** TODO_YOUTUBE_URL_AFTER_UPLOAD
+- **Live demo:** http://43.106.15.232:3000
+- **Architecture:** `ARCHITECTURE.md`
+- **Alibaba proof:** `alibaba/proof.ts` + `alibaba/proof.json`
+- **Audit chain API:** http://43.106.15.232:3000/api/audit
+- **dev.to post:** optional — draft in `BLOG.md`
 
 ## Track
-Track 3 — Agent Society.
+Track 3 — Agent Society
+
+## Testing instructions for judges
+
+1. Open http://43.106.15.232:3000  
+2. Click **Drainer reject** → Convene Council → expect **REJECT** with live vote stream  
+3. Click **Clean low-risk** → expect **APPROVE** (routine corridor) or escalate  
+4. Click **Held-back consensus** / **$12k** → expect **ESCALATE** / held-back banner  
+5. Open `/benchmark` for lone-agent vs council table  
+6. Open `/api/audit` for hash-chain verification  
+7. Optional: `npm run mcp` and call `submitAction` from any MCP client  
+
+No private keys. Mainnet read-only + fork simulation only.

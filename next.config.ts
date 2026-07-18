@@ -1,11 +1,31 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Produce a self-contained .next/standalone (node server.js) for the Alibaba
-  // ECS Docker image — no node_modules copy needed at runtime.
   output: "standalone",
-  // pg / @modelcontextprotocol/sdk spawn shouldn't be bundled into the server.
   serverExternalPackages: ["pg", "@modelcontextprotocol/sdk", "openai"],
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              "style-src 'self' 'unsafe-inline'",
+              "img-src 'self' data: blob:",
+              "font-src 'self' data:",
+              "connect-src 'self'",
+              "frame-ancestors 'none'",
+              "form-action 'self'",
+              "base-uri 'self'",
+            ].join("; "),
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

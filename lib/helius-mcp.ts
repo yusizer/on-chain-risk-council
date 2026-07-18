@@ -1,7 +1,7 @@
 /**
  * lib/helius-mcp.ts — Client for the Helius MCP server (https://www.helius.dev/docs/agents/mcp).
  *
- * Spawns `npx helius-mcp@latest` as a subprocess and speaks MCP over stdio.
+ * Spawns a pinned/configured `helius-mcp` subprocess and speaks MCP over stdio.
  * Exposes 9 routed domain tools; we call the ones the council needs:
  *   heliusTransaction.parseTransactions  — human-readable tx parse
  *   heliusChain.getAccountInfo           — account type / owner / data
@@ -17,6 +17,31 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 let _client: Client | null = null;
 let _initPromise: Promise<Client> | null = null;
+const MCP_CONNECT_TIMEOUT_MS = 20_000;
+const MCP_TOOL_TIMEOUT_MS = 35_000;
+
+interface McpTextBlock {
+  type?: unknown;
+  text?: unknown;
+}
+
+function isTextBlock(value: unknown): value is McpTextBlock {
+  return typeof value === "object" && value !== null && (value as McpTextBlock).type === "text";
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 async function client(): Promise<Client> {
   if (_client) return _client;
@@ -25,19 +50,38 @@ async function client(): Promise<Client> {
     const apiKey = process.env.HELIUS_API_KEY;
     if (!apiKey) throw new Error("HELIUS_API_KEY not set");
     const isWin = process.platform === "win32";
+    const configuredCommand = process.env.HELIUS_MCP_COMMAND;
+    const configuredArgs = process.env.HELIUS_MCP_ARGS?.split(" ").filter(Boolean);
     const transport = new StdioClientTransport({
-      command: isWin ? "npx.cmd" : "npx",
-      args: ["helius-mcp@latest"],
-      env: { ...process.env, HELIUS_API_KEY: apiKey } as Record<string, string>,
+      command: configuredCommand ?? (isWin ? "npx.cmd" : "npx"),
+      args: configuredArgs ?? (configuredCommand ? [] : ["helius-mcp@2.1.0"]),
+      env: {
+        HELIUS_API_KEY: apiKey,
+        PATH: process.env.PATH ?? "",
+        HOME: process.env.HOME ?? "",
+        NODE_ENV: process.env.NODE_ENV ?? "production",
+      },
     });
     const c = new Client(
       { name: "on-chain-risk-council", version: "0.1.0" },
       { capabilities: {} },
     );
-    await c.connect(transport);
+    try {
+      await withTimeout(c.connect(transport), MCP_CONNECT_TIMEOUT_MS, "Helius MCP connect");
+    } catch (e) {
+      try {
+        await c.close();
+      } catch {
+        // Best-effort cleanup on failed connect.
+      }
+      throw e;
+    }
     _client = c;
     return c;
-  })();
+  })().catch((e) => {
+    _initPromise = null;
+    throw e;
+  });
   return _initPromise;
 }
 
@@ -52,6 +96,7 @@ async function client(): Promise<Client> {
 export async function callHelius(
   tool: string,
   args: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<unknown> {
   const c = await client();
   const arguments_ = {
@@ -61,12 +106,25 @@ export async function callHelius(
     _model: "qwen3-coder-plus",
     ...args,
   };
-  const res = await c.callTool({ name: tool, arguments: arguments_ });
+  const action = typeof args.action === "string" ? args.action : "unknown";
+  let res: Awaited<ReturnType<Client["callTool"]>>;
+  try {
+    res = await withTimeout(
+      c.callTool({ name: tool, arguments: arguments_ }, undefined, { signal }),
+      MCP_TOOL_TIMEOUT_MS,
+      `Helius MCP ${tool}.${action}`,
+    );
+  } catch (e) {
+    if (String(e).includes("timed out")) await closeHelius();
+    throw e;
+  }
+  const isError = (res as { isError?: unknown }).isError === true;
   // MCP tool results wrap content blocks; return the first text block parsed.
-  const content = (res as any).content;
+  const content = (res as { content?: unknown }).content;
   if (Array.isArray(content)) {
-    const txt = content.find((b: any) => b.type === "text")?.text;
-    if (txt) {
+    const txt = content.filter(isTextBlock).map((b) => b.text).filter((t): t is string => typeof t === "string").join("\n");
+    if (typeof txt === "string") {
+      if (isError) throw new Error(`Helius MCP ${tool}.${action} error: ${txt.slice(0, 500)}`);
       try {
         return JSON.parse(txt);
       } catch {
@@ -74,53 +132,49 @@ export async function callHelius(
       }
     }
   }
+  if (isError) throw new Error(`Helius MCP ${tool}.${action} error`);
   return res;
 }
 
 /* ── Typed helpers used by the council agents ─────────────────────────────── */
 
 /** Parse one or more transaction signatures into a human-readable description. */
-export async function parseTransactions(signatures: string[]): Promise<unknown> {
-  // heliusTransaction.parseTransactions takes `signatures` (array), NOT `transactions`.
+export async function parseTransactions(signatures: string[], signal?: AbortSignal): Promise<unknown> {
   return callHelius("heliusTransaction", {
     action: "parseTransactions",
     signatures,
-  });
+  }, signal);
 }
 
 /** Account info (owner, lamports, data) — detects program/mint/ATA vs wallet. */
-export async function getAccountInfo(address: string): Promise<unknown> {
-  return callHelius("heliusChain", { action: "getAccountInfo", address });
+export async function getAccountInfo(address: string, signal?: AbortSignal): Promise<unknown> {
+  return callHelius("heliusChain", { action: "getAccountInfo", address }, signal);
 }
 
 /** Token accounts for an owner (what they hold, mint, amount). */
-export async function getTokenAccounts(owner: string): Promise<unknown> {
-  return callHelius("heliusChain", { action: "getTokenAccounts", owner });
+export async function getTokenAccounts(owner: string, signal?: AbortSignal): Promise<unknown> {
+  return callHelius("heliusChain", { action: "getTokenAccounts", owner }, signal);
 }
 
 /** Fork-simulate a serialized/base64 transaction: logs, CU, pre/post account diff. */
 export async function simulateTransaction(
   transaction: string,
-  opts: { commitment?: string; sigVerify?: boolean; replaceRecentBlockhash?: boolean } = {},
+  opts: { commitment?: string; sigVerify?: boolean; replaceRecentBlockhash?: boolean; signal?: AbortSignal } = {},
 ): Promise<unknown> {
   // heliusChain.simulateTransaction schema: transaction, sigVerify,
   // replaceRecentBlockhash, commitment (no `signers` — fork-sim, not execution).
   return callHelius("heliusChain", {
     action: "simulateTransaction",
     transaction,
-    sigVerify: true,
-    replaceRecentBlockhash: true,
+    sigVerify: opts.sigVerify ?? false,
+    replaceRecentBlockhash: opts.replaceRecentBlockhash ?? true,
     commitment: opts.commitment ?? "confirmed",
-    ...opts,
-  });
+  }, opts.signal);
 }
 
 /** Wallet funding analysis — was this account funded by a known drainer/exchange? */
-export async function walletFunding(address: string): Promise<unknown> {
-  // Valid heliusWallet actions: getBalance, getTokenBalances, getWalletBalances,
-  // getWalletBalanceAt, getWalletHistory, getWalletTransfers, getWalletIdentity,
-  // batchWalletIdentity, getWalletFundedBy. (getFundingAnalysis is NOT valid.)
-  return callHelius("heliusWallet", { action: "getWalletFundedBy", address });
+export async function walletFunding(address: string, signal?: AbortSignal): Promise<unknown> {
+  return callHelius("heliusWallet", { action: "getWalletFundedBy", address }, signal);
 }
 
 /** Close the MCP client + its stdio subprocess. Call on shutdown to avoid orphan processes. */
@@ -147,7 +201,7 @@ export async function listTools(): Promise<{ name: string; description?: string 
 export async function listToolsDetailed(): Promise<{ name: string; description?: string; inputSchema: unknown }[]> {
   const c = await client();
   const r = await c.listTools();
-  return (r.tools ?? []).map((t) => ({ name: t.name, description: t.description, inputSchema: (t as any).inputSchema }));
+  return (r.tools ?? []).map((t) => ({ name: t.name, description: t.description, inputSchema: (t as { inputSchema?: unknown }).inputSchema }));
 }
 
 /** Health check: list tools (cheap round-trip). */

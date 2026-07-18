@@ -2,28 +2,38 @@
  * lib/types.ts — shared zod schemas for the On-Chain Risk Council.
  *
  * Every agent produces a well-typed object validated by a schema. The guardrail
- * never trusts free text: it reads the *trusted action record* (derived from
- * parsed on-chain data, not from model output).
+ * never trusts free text: it reads the structured action record produced by
+ * intake from parsed on-chain data or a conservative intent review.
  */
 import { z } from "zod";
 
 /* ── Input ─────────────────────────────────────────────────────────────────── */
 
+const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
+const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
 export const ActionInputSchema = z
   .object({
-    signature: z.string().optional(), // Solana tx signature to review
-    serializedTx: z.string().optional(), // base64 serialized tx
-    intent: z.string().optional(), // natural-language intent
-    requester: z.string().optional(),
-    network: z.string().default("mainnet"),
+    signature: z.string().trim().min(64).max(128).regex(BASE58_RE, "signature must be base58").optional(), // Solana tx signature to review
+    serializedTx: z.string().trim().min(16).max(20_000).regex(BASE64_RE, "serializedTx must be base64").optional(), // base64 serialized tx
+    intent: z.string().trim().min(4).max(2_000).optional(), // natural-language intent
+    requester: z.string().trim().max(128).optional(),
+    // Helius MCP cluster routing is not wired yet; reject devnet instead of silently reviewing it as mainnet.
+    network: z.literal("mainnet").default("mainnet"),
   })
-  .refine(
-    (a) => a.signature || a.serializedTx || a.intent,
-    "Provide one of: signature | serializedTx | intent",
-  );
+  .superRefine((a, ctx) => {
+    const provided = [a.signature, a.serializedTx, a.intent].filter((v) => v != null && v !== "").length;
+    if (provided !== 1) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Provide exactly one of: signature | serializedTx | intent",
+        path: [],
+      });
+    }
+  });
 export type ActionInput = z.infer<typeof ActionInputSchema>;
 
-/* ── Trusted action record (derived, NOT from LLM) ─────────────────────────── */
+/* ── Trusted action record ─────────────────────────────────────────────────── */
 
 export const ActionKindSchema = z.enum([
   "transfer",
@@ -115,6 +125,17 @@ export const DecisionSchema = z.object({
   tokens: z.number().default(0),
   latencyMs: z.number().default(0),
   malicious: z.boolean().nullable().default(null), // ground truth (benchmark only)
+  /** Tamper-evident audit chain fields (set by orchestrator). */
+  audit: z
+    .object({
+      id: z.string(),
+      eventHash: z.string(),
+      prevHash: z.string(),
+      actionHash: z.string(),
+    })
+    .optional(),
+  /** Disagreement signal: agents did not all vote the same (Track 3 conflict). */
+  conflict: z.boolean().optional(),
 });
 export type Decision = z.infer<typeof DecisionSchema>;
 

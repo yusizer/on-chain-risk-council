@@ -1,5 +1,5 @@
 /**
- * lib/db.ts — Alibaba Cloud RDS PostgreSQL + pgvector.
+ * lib/db.ts — PostgreSQL + pgvector memory/audit backend.
  *
  * Two tables back the council:
  *   exploit_patterns  — labelled Solana exploit signatures with a 1024-d
@@ -15,7 +15,9 @@ const { Pool } = pg;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.PGSSLMODE === "require" ? { rejectUnauthorized: false } : undefined,
+  ssl: process.env.PGSSLMODE === "require"
+    ? { rejectUnauthorized: process.env.PGSSL_REJECT_UNAUTHORIZED !== "false" }
+    : undefined,
   max: 8,
   idleTimeoutMillis: 30_000,
 });
@@ -60,7 +62,10 @@ export function ensureSchema(): Promise<void> {
     } finally {
       c.release();
     }
-  })();
+  })().catch((e) => {
+    _schemaReady = null;
+    throw e;
+  });
   return _schemaReady;
 }
 
@@ -101,23 +106,43 @@ export interface DecisionRecord {
   action_hash?: string;
   track?: string;
   outcome: string;
-  agent_votes: Record<string, unknown>;
-  guardrail?: Record<string, unknown>;
+  agent_votes: unknown;
+  guardrail?: unknown;
   malicious?: boolean;
   tokens?: number;
   latency_ms?: number;
+}
+
+export interface DecisionSummary {
+  id: number;
+  action_hash: string | null;
+  track: string | null;
+  outcome: string;
+  malicious: boolean | null;
+  tokens: number | null;
+  latency_ms: number | null;
+  created_at: Date;
 }
 
 export async function insertDecision(d: DecisionRecord): Promise<number> {
   const r = await pool.query(
     `INSERT INTO decisions (action_hash, track, outcome, agent_votes, guardrail, malicious, tokens, latency_ms)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id;`,
-    [d.action_hash, d.track, d.outcome, d.agent_votes, d.guardrail, d.malicious, d.tokens, d.latency_ms],
+    [
+      d.action_hash,
+      d.track,
+      d.outcome,
+      JSON.stringify(d.agent_votes),
+      d.guardrail == null ? null : JSON.stringify(d.guardrail),
+      d.malicious,
+      d.tokens,
+      d.latency_ms,
+    ],
   );
   return r.rows[0]?.id;
 }
 
-export async function listDecisions(limit = 50): Promise<any[]> {
+export async function listDecisions(limit = 50): Promise<DecisionSummary[]> {
   const r = await pool.query(
     `SELECT id, action_hash, track, outcome, malicious, tokens, latency_ms, created_at
      FROM decisions ORDER BY created_at DESC LIMIT $1;`,

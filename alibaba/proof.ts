@@ -4,8 +4,9 @@
  * Run ON the Alibaba ECS instance that hosts the backend. Proves and records:
  *   1. The process is running on an Alibaba ECS instance — via the instance
  *      metadata service (100.100.100.200), only reachable from inside ECS.
- *   2. The RDS PostgreSQL + pgvector is reachable and the `vector` extension is
- *      installed (the exploit-pattern memory backend).
+ *   2. PostgreSQL + pgvector is reachable and the `vector` extension is
+ *      installed (the exploit-pattern memory backend). The free-trial deploy
+ *      uses an ECS-local pgvector container; the schema is RDS-compatible.
  *   3. The Qwen + Helius backends are reachable.
  *   4. (Optional) the council /api/health endpoint is live.
  *
@@ -32,7 +33,7 @@ async function fetchMeta(key: string): Promise<string | null> {
 }
 
 async function pingCouncil(): Promise<unknown> {
-  const url = process.env.COUNCIL_URL ?? "http://localhost:3000/api/health";
+  const url = process.env.COUNCIL_URL ?? "http://localhost:3000/api/health?deep=1&schema=1";
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
     return await r.json();
@@ -69,11 +70,11 @@ async function main(): Promise<void> {
   }
   console.log("ECS:", ecs);
 
-  // 2. RDS PostgreSQL + pgvector.
+  // 2. PostgreSQL + pgvector.
   await ensureSchema();
   const db = await dbPing();
   const pgvector = await checkPgvector();
-  console.log("RDS:", db, "pgvector:", pgvector);
+  console.log("DB:", db, "pgvector:", pgvector);
 
   // 3. Qwen + Helius.
   const qwen = await qwenPing();
@@ -87,7 +88,7 @@ async function main(): Promise<void> {
   const proof = {
     timestamp: new Date().toISOString(),
     ecs,
-    rds: { ...db, pgvector },
+    db: { ...db, pgvector },
     qwen,
     helius: { ok: helius.ok, toolCount: helius.tools.length, error: helius.error },
     council,
@@ -102,7 +103,7 @@ async function main(): Promise<void> {
   };
   writeFileSync("alibaba/proof.json", JSON.stringify(proof, null, 2));
   console.log("\nproof written: alibaba/proof.json");
-  console.log("onEcs:", ecs.onEcs, "| rds.ok:", db.ok, "| pgvector:", pgvector.installed, "| qwen:", qwen.ok, "| helius:", helius.ok);
+  console.log("onEcs:", ecs.onEcs, "| db.ok:", db.ok, "| pgvector:", pgvector.installed, "| qwen:", qwen.ok, "| helius:", helius.ok);
 }
 
 main()

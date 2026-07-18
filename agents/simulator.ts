@@ -21,6 +21,7 @@ function pickString(obj: unknown, ...keys: string[]): string | undefined {
     for (const k of keys) {
       const v = (obj as Record<string, unknown>)[k];
       if (typeof v === "string") return v;
+      if (v && typeof v === "object") return JSON.stringify(v);
     }
   }
   return undefined;
@@ -36,9 +37,22 @@ function pickNumber(obj: unknown, ...keys: string[]): number | null {
   return null;
 }
 
+function asRecord(obj: unknown): Record<string, unknown> | null {
+  return obj && typeof obj === "object" ? obj as Record<string, unknown> : null;
+}
+
+function unwrapSimulation(out: unknown): unknown {
+  const root = asRecord(out);
+  const result = asRecord(root?.result);
+  const simulation = asRecord(root?.simulation);
+  const value = asRecord(result?.value) ?? asRecord(simulation?.value) ?? asRecord(root?.value);
+  return value ?? result ?? simulation ?? root ?? out;
+}
+
 export async function simulator(
   serializedTx: string | undefined,
   emit?: Emit,
+  signal?: AbortSignal,
 ): Promise<SimResult> {
   if (!serializedTx) {
     const res: SimResult = {
@@ -58,21 +72,32 @@ export async function simulator(
   emit?.({ step: "simulator", agent: "simulator", status: "start", message: "Fork-simulating transaction via Helius MCP" });
 
   try {
-    const out = await simulateTransaction(serializedTx);
-    // Helius nests the sim under result/simulation/value; be tolerant of shape.
-    const inner =
-      (out as Record<string, unknown>)?.result ??
-      (out as Record<string, unknown>)?.simulation ??
-      (out as Record<string, unknown>)?.value ??
-      out;
+    const out = await simulateTransaction(serializedTx, { signal });
+    // Helius/JSON-RPC commonly nests the sim under result.value; be tolerant.
+    const inner = unwrapSimulation(out);
+    const simRecord = asRecord(inner);
 
-    const err = pickString(inner, "err", "error", "Err");
+    if (!simRecord) {
+      const res: SimResult = {
+        ran: true,
+        failed: true,
+        computeUnits: null,
+        logs: [],
+        feeLamports: null,
+        summary: "simulation returned non-JSON/non-object output",
+        raw: { outer: out },
+      };
+      emit?.({ step: "simulator", agent: "simulator", status: "error", data: res, message: res.summary });
+      return res;
+    }
+
+    const err = pickString(simRecord, "err", "error", "Err");
     const failed = err != null && err !== "null" && err !== "";
-    const logs: string[] = Array.isArray((inner as Record<string, unknown>)?.logs)
-      ? ((inner as Record<string, unknown>).logs as unknown[]).map(String)
+    const logs: string[] = Array.isArray(simRecord.logs)
+      ? (simRecord.logs as unknown[]).map(String)
       : [];
-    const computeUnits = pickNumber(inner, "unitsConsumed", "computeUnits", "units_consumed", "cu");
-    const feeLamports = pickNumber(inner, "fee", "feeLamports", "fee_lamports");
+    const computeUnits = pickNumber(simRecord, "unitsConsumed", "computeUnits", "units_consumed", "cu");
+    const feeLamports = pickNumber(simRecord, "fee", "feeLamports", "fee_lamports");
     const summary = failed
       ? `simulation FAILED: ${err}`
       : `simulation ok — ${computeUnits ?? "?"} CU, fee ${feeLamports ?? "?"} lamports, ${logs.length} log lines`;

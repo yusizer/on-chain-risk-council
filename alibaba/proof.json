@@ -1,0 +1,58 @@
+{
+  "timestamp": "2026-07-06T16:06:59.535Z",
+  "ecs": {
+    "onEcs": true,
+    "instanceId": "i-t4ngod7z5hh5qmeb6w0o",
+    "region": "ap-southeast-1",
+    "zone": "ap-southeast-1c"
+  },
+  "db": {
+    "ok": true,
+    "pgvector": {
+      "installed": true
+    }
+  },
+  "qwen": {
+    "ok": true,
+    "model": "qwen-turbo",
+    "reply": "ok"
+  },
+  "helius": {
+    "ok": true,
+    "toolCount": 10
+  },
+  "council": {
+    "ok": true,
+    "qwen": {
+      "ok": true,
+      "model": "qwen-turbo",
+      "reply": "ok"
+    },
+    "helius": {
+      "ok": true,
+      "tools": [
+        "heliusAccount",
+        "heliusWallet",
+        "heliusAsset",
+        "heliusTransaction",
+        "heliusChain",
+        "heliusStreaming",
+        "heliusKnowledge",
+        "heliusWrite",
+        "heliusCompression",
+        "expandResult"
+      ]
+    },
+    "db": {
+      "ok": true
+    }
+  },
+  "envPresent": {
+    "DASHSCOPE_API_KEY": true,
+    "HELIUS_API_KEY": true,
+    "DATABASE_URL": true,
+    "ALIYUN_ECS_INSTANCE_ID": true,
+    "ALIYUN_RDS_INSTANCE_ID": false,
+    "ALIYUN_REGION": true
+  }
+}

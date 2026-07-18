@@ -14,6 +14,18 @@ import { listTools, listToolsDetailed, getAccountInfo, walletFunding, parseTrans
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const BINANCE_HOT = "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9";
 
+interface JsonSchemaProp {
+  type?: string | string[];
+  minLength?: number;
+  enum?: unknown[];
+}
+
+interface JsonSchemaLike {
+  properties?: Record<string, JsonSchemaProp>;
+  required?: string[];
+  anyOf?: unknown;
+}
+
 function head(s: unknown, n = 240): string {
   const str = typeof s === "string" ? s : JSON.stringify(s);
   return str.length > n ? str.slice(0, n) + "…" : str;
@@ -47,11 +59,11 @@ async function main() {
     for (const name of ["heliusTransaction", "heliusChain", "heliusWallet"]) {
       const t = detailed.find((d) => d.name === name);
       if (t) {
-        const schema = t.inputSchema as any;
+        const schema = t.inputSchema as JsonSchemaLike;
         const props = schema?.properties ?? {};
         const required: string[] = schema?.required ?? [];
         const propSummary = Object.entries(props)
-          .map(([k, v]: [string, any]) => `${k}${required.includes(k) ? "*" : ""}:${v?.type ?? "?"}${v?.minLength != null ? `(minLen ${v.minLength})` : ""}${v?.enum ? ` enum[${v.enum.join("|")}]` : ""}`)
+          .map(([k, v]) => `${k}${required.includes(k) ? "*" : ""}:${v.type ?? "?"}${v.minLength != null ? `(minLen ${v.minLength})` : ""}${v.enum ? ` enum[${v.enum.map(String).join("|")}]` : ""}`)
           .join(", ");
         console.log(`\n${name}: required=[${required.join(",")}]`);
         console.log(`  props: ${propSummary}`);

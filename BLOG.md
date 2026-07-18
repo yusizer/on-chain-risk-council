@@ -1,143 +1,69 @@
-# Building an On-Chain Risk Council: a multi-agent society that reviews Solana actions before they execute
+# Building an On-Chain Risk Council with Qwen: agents deliberate, code decides
 
-*Build-in-public post for the Global AI Hackathon with Qwen Cloud (Track 3: Agent Society).*
+*Build-in-public for the [Global AI Hackathon with Qwen Cloud](https://qwencloud-hackathon.devpost.com/) — Track 3: Agent Society.*
 
-Solana drainers and exploiters cost users hundreds of millions of dollars a
-year. The standard defense — "ask an LLM whether this transaction is safe" —
-fails two ways: a single model confidently approves irreversible attacks it has
-never seen before, and even a *correct* "looks safe" verdict carries no hard
-safety floor. A fluent agent can talk its way past any threshold.
+Wallet drainers have caused nine-figure losses across crypto. The naive defense — “ask an LLM if this transaction is safe” — fails twice: novel attack patterns and **no hard safety floor**. A fluent agent can talk its way past any soft threshold.
 
-So I built an **On-Chain Risk Council**: a society of specialised Qwen agents
-that deliberates over a high-stakes Solana action, then a **deterministic
-one-way-ratchet guardrail** — keyed off a *trusted* action record derived from
-on-chain data, never from model output — makes the final call. Consensus is
-necessary, never sufficient: a unanimously-approved irreversible action is
-still held back for a human.
+I built the **On-Chain Risk Council**: a society of specialised Qwen agents that deliberates over a Solana action, then a **deterministic one-way-ratchet guardrail** — keyed off a *trusted* action record, never free-text — makes the final call. Every decision is written into a **tamper-evident hash chain**. Consensus is necessary, never sufficient.
 
 ## Why a society, not a hero
 
-A single agent, however strong, has one perspective. Real transaction review
-needs several: a **risk analyst** (amount, counterparty novelty, authority
-changes), an **exploit skeptic** (matches known attack patterns, pulls
-counterparty history on-chain), a **compliance officer** (policy rules), a
-**simulator** (fork-runs the tx and reads the logs), and a **referee** that
-votes last after seeing everyone else. Each is a narrow specialist; together
-they cover blind spots no one agent has.
+Track 3 asks for role division, dialogue/conflict resolution, and a **measurable gain over a single-agent baseline**. Real tx review needs:
 
-The referee is the strongest model (`qwen3.7-max`), but it is **not** the
-decision-maker. The deterministic guardrail is. That separation is the whole
-thesis: the LLM advises, code decides.
+- **Risk Analyst** — amount, counterparty novelty, authority changes  
+- **Exploit Skeptic** — Helius MCP evidence + pgvector recall of labelled exploits  
+- **Compliance** — deterministic policy (block patterns, amount caps)  
+- **Simulator** — fork-sim via Helius `simulateTransaction`  
+- **Referee** — votes *last* after seeing everyone else  
 
-## Architecture
+The referee is the strongest model, but **not** the decision-maker. Code is.
 
-```mermaid
-flowchart TD
-    U[Client / Solana wallet or agent] -->|POST /api/actions| API[Next.js API]
-    API --> ORCH[Council Orchestrator]
-    ORCH -->|intake| QTURBO[qwen-turbo]
-    ORCH -->|risk| QMAX[qwen3.7-max]
-    ORCH -->|exploit hunt| QCODER[qwen3-coder-plus]
-    QCODER -->|parseTransactions / getAccountInfo / getWalletFundedBy| HELIUS[Helius MCP]
-    ORCH -->|policy rules| POL[Compliance]
-    ORCH -->|simulate tx| HC[heliusChain.simulateTransaction]
-    ORCH -->|aggregate| QMAX2[Referee qwen3.7-max]
-    QMAX2 --> GR[Guardrail — deterministic one-way ratchet]
-    GR -->|execute / escalate / reject| API
-    API -->|SSE live deliberation| U
-```
-
-The action flows: **intake** (parse + classify) → **round 1** (risk analyst +
-exploit skeptic + compliance in parallel, plus the simulator) → **round 2**
-(cross-debate: each specialist sees the others' votes and may revise) →
-**referee** → **guardrail**. Every step streams to the client over SSE so you
-watch the council deliberate live.
-
-## The deterministic guardrail (the actual decision-maker)
+## Architecture (short)
 
 ```
-execute (0) < escalate (1) < reject (2)
+Client → Next.js API → Orchestrator
+  → Intake (qwen-turbo + deterministic Solana decode)
+  → Risk ‖ Exploit ‖ Compliance ‖ Simulator
+  → Cross-debate (agents revise; safety floor never downgrades)
+  → Referee
+  → Guardrail (one-way ratchet + routine corridor)
+  → Audit hash chain
 ```
 
-The guardrail reads `stakes` and `reversibility` from the **trusted action
-record** — derived from parsed on-chain data, not from anything a model said —
-and can only move the outcome **up** the safety ranking, never down. Rules:
-irreversible → at least escalate; high-stakes → at least escalate; authority
-change → at least escalate; low mean confidence → at least escalate; any
-`blocking_flag` from an agent → at least escalate. A unanimous "execute" on an
-irreversible $12k payment is **held back** — that is the moment the demo shows.
+Double MCP: the council **consumes** Helius and **exposes** itself (`submitAction`, `getDecision`, `getBenchmark`) so wallets and other agents can ask before signing.
 
-A confidently-wrong agent cannot unlock an irreversible action, because the
-guardrail never reads the agent's confidence as authority.
+## The held-back moment
 
-## Double MCP (the technical-depth play)
+A $12k irreversible payment can get **unanimous execute** from every agent. The guardrail still escalates: high stakes / irreversible / authority / blocking flags. That banner in the UI is the product thesis.
 
-The council is on **both sides** of MCP:
+Low-stakes routine transfers (lunch USDC, no authority change) can **execute** via a routine corridor — otherwise a safety system that blocks everything is useless.
 
-1. **Consumes** the Helius MCP server — `parseTransactions`,
-   `getAccountInfo`, `getWalletFundedBy`, `simulateTransaction` — as stdio
-   tools, so the exploit skeptic reasons over real on-chain evidence, not
-   guesses. (Helius MCP requires telemetry params `_feedback` / `_feedbackTool`
-   / `_model` on every routed call — a footgun worth a paragraph of its own.)
-2. **Exposes itself** as an MCP server (`mcp-server/server.ts`) with three
-   tools — `submitAction`, `getDecision`, `getBenchmark` — so any external AI
-   client (Claude, Cursor, a wallet agent) can request a review and get a
-   structured Decision back. Council-as-a-tool is the productization story:
-   wallets and agents plug in via MCP.
+## Benchmark (honest)
 
-## Benchmark: does the society actually beat the lone wolf?
+19 labelled actions including **real** Wormhole/Cashio mainnet signatures:
 
-An honest benchmark needs a shortcut baseline — otherwise you're just measuring
-"did the model rediscover the dominant action". So I run **lone-agent** (a
-single `qwen3.7-max` vote, no council, no guardrail — the lone wolf most
-competitors ship) against the **full council** over a labelled set of clean +
-malicious Solana actions, and report malicious recall, false-approve,
-false-reject, over-escalate, clean-approve, accuracy, latency, and token cost.
+| | malRecall | falseApprove | cleanApprove | accuracy |
+|---|---|---|---|---|
+| Lone `qwen3.7-max` (no guardrail) | **60%** | **40%** | 100% | 79% |
+| Council (5 agents + guardrail, no memory) | **100%** | **0%** | 89% | 95% |
 
-| baseline | malRecall | falseApprove | falseReject | cleanApprove | accuracy | latency | tokens |
-|---|---|---|---|---|---|---|---|
-| lone-agent (single qwen3.7-max, no guardrail) | 75% | **25%** | 0% | 100% | 79% | 21.5s | 1.8k |
-| council-no-memory (5 agents + cross-debate + guardrail) | **100%** | **0%** | 17% | 17% | 57% | 56.3s | 6.6k |
+The lone strong model green-lights **four** of four historical exploit signatures (Wormhole complete_wrapped, Wormhole verify_signatures, Cashio mint 2B, Cashio fake_root) — a 40% false-approval rate. The council false-approves **zero**. That is the Track 3 measurable gain: not “more chat”, but **fewer catastrophic approvals**.
 
-The thesis row is `falseApprove`. The dataset is 14 labelled actions: 6
-synthetic malicious, **2 real on-chain Wormhole exploit signatures** (the $325M
-bridge hack), and 6 clean. The lone wolf **false-approves both real Wormhole
-signatures** — a single strong model with no safety floor green-lights an
-actual on-chain exploit. The council catches both and hits 100% malicious
-recall / 0% false-approve. That is the whole point: a deterministic guardrail
-over a multi-agent society can never be talked into approving an irreversible
-exploit the way a lone agent can.
+## What I learned
 
-The trade-off is throughput — the council over-blocks clean (cleanApprove 17%
-vs 100%) because the guardrail escalates irreversible clean actions to human
-review by design (the held-back moment). For high-stakes on-chain review that
-is the correct call: never approving a drainer matters more than never
-bothering a human. (Tuning the skeptic to "reject only on a *positive* exploit
-signal, not on absence of evidence" was the single biggest lever — an
-under-tuned council over-blocks everything and *looks* safe while being
-useless. pgvector memory, landing next, targets even more nuanced attacks.)
+1. Multi-agent value shows up on **nuanced** cases and evidence, not on obvious drainers.  
+2. `reversible` must never come from the user (“it’s refundable!”).  
+3. Hash-chaining decisions turns a demo into an audit trail another agent can verify.  
+4. Qwen Cloud + Alibaba ECS is enough to ship a production-shaped gate in a hackathon window.
 
-## Live demo
+## Try it
 
-The council chamber (`/`) streams deliberation as it happens: agent vote cards
-fill in, the guardrail fires, and the held-back moment is highlighted when the
-ratchet overrides a unanimous approve. The benchmark dashboard (`/benchmark`)
-renders the metrics table + per-action outcomes.
+- Live: http://43.106.15.232:3000  
+- Repo: https://github.com/yusizer/on-chain-risk-council  
+- Audit: `/api/audit` · Bench: `/benchmark`
 
-## Stack
-
-Next.js 16 (App Router) + TypeScript + Tailwind · Qwen Cloud (DashScope,
-OpenAI-compatible) — `qwen3.7-max` / `qwen3-coder-plus` / `qwen-turbo` /
-`text-embedding-v3` · Helius MCP · Alibaba Cloud RDS PostgreSQL + pgvector
-(exploit-pattern memory + decisions audit log) · deployed on Alibaba ECS.
-
-## What's next
-
-Real exploit signatures in the pgvector memory (D4), Alibaba deploy + proof
-(D7), and a 3-minute demo video (D8). The repo is public; the council is
-installable as an MCP server today.
+Built with Qwen Cloud (DashScope), Helius MCP, Alibaba Cloud ECS + pgvector, Next.js 16.
 
 ---
 
-*Built for the Global AI Hackathon with Qwen Cloud, Track 3: Agent Society.
-Repo + MIT license in the About. Feedback welcome.*
+*Track 3: Agent Society · MIT · Feedback welcome.*

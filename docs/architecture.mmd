@@ -1,7 +1,8 @@
 flowchart TD
-    U[Client / Solana wallet or agent] -->|"POST /api/actions {tx or intent}"'| API[Next.js API routes\nApp Router, Node runtime]
+    U[Client / Solana wallet or agent] -->|"POST /api/actions {tx or intent}"| API[Next.js API routes\nApp Router, Node runtime]
 
     API --> ORCH[Council Orchestrator\ndebate rounds + SSE stream]
+    ORCH --> DET[Deterministic extractor\nintent regex + serialized tx decode]
 
     subgraph QWEN[Qwen Cloud — DashScope OpenAI-compatible]
         QMAX[qwen3.7-max\nreasoning]
@@ -16,12 +17,13 @@ flowchart TD
         HW[heliusWallet\nfunding analysis]
     end
 
-    subgraph MEM[Alibaba RDS PostgreSQL + pgvector]
+    subgraph MEM[ECS PostgreSQL + pgvector\nRDS-compatible schema]
         EP[(exploit_patterns\nlabelled + 1024-d vector)]
         DEC[(decisions\naudit log + votes + guardrail)]
     end
 
-    ORCH -->|"intake/classify"| QTURBO
+    DET -->|"hard safety hints"| ORCH
+    ORCH -->|"intake/classify + normalize"| QTURBO
     ORCH -->|"risk dimensions"| QMAX
     ORCH -->|"exploit-pattern match"| QCODER
     QCODER -->|"parseTransactions / getAccountInfo / getTokenAccounts"| HT

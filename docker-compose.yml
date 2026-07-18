@@ -1,18 +1,45 @@
-# docker-compose for the On-Chain Risk Council on Alibaba Cloud ECS.
-# RDS PostgreSQL + pgvector is a managed Alibaba service (external — not a
-# container here); the backend reaches it over DATABASE_URL.
+# docker-compose for the On-Chain Risk Council on a single Alibaba Cloud ECS.
+# The free ECS trial covers the app and an internal PostgreSQL+pgvector
+# container, so no paid RDS instance is required for the demo/proof.
 services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: riskcouncil-db
+    environment:
+      POSTGRES_DB: riskcouncil
+      POSTGRES_USER: riskcouncil
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - riskcouncil_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U riskcouncil -d riskcouncil"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   council:
     build: .
     image: on-chain-risk-council
     container_name: council
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "3000:3000"
     env_file: .env
+    volumes:
+      - ./.env:/app/.env:ro
     environment:
       - NODE_ENV=production
+      - HOSTNAME=0.0.0.0
+      - DATABASE_URL=postgresql://riskcouncil:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/riskcouncil
+      - PGSSLMODE=disable
     restart: unless-stopped
     # The council spawns `npx helius-mcp` as a subprocess; keep stdin open so
     # the stdio MCP transport works under docker.
     stdin_open: true
     tty: true
+
+volumes:
+  riskcouncil_pgdata:

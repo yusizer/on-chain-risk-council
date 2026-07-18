@@ -12,6 +12,7 @@
  *   submitAction(signature | serializedTx | intent) -> Decision
  *   getDecision()                                   -> latest Decision (in-session)
  *   getBenchmark()                                  -> latest benchmark/results/*.json
+ *   getAuditChain()                                 -> hash-chain verification + events
  *
  * Run:  npm run mcp
  *   or wire into an MCP client config:
@@ -25,7 +26,8 @@ import { z } from "zod";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { runCouncil } from "@/orchestrator/council";
-import type { ActionInput, Decision } from "@/lib/types";
+import { ActionInputSchema, type ActionInput, type Decision } from "@/lib/types";
+import { acquireCouncilSlot, councilGateStatus } from "@/lib/councilGate";
 
 let lastDecision: Decision | null = null;
 
@@ -34,7 +36,7 @@ const actionShape = {
   serializedTx: z.string().optional().describe("base64 serialized transaction to fork-simulate via Helius"),
   intent: z.string().optional().describe("natural-language description of the action"),
   requester: z.string().optional().describe("optional requester identifier"),
-  network: z.string().default("mainnet").describe("Solana network: mainnet | devnet"),
+  network: z.literal("mainnet").default("mainnet").describe("Solana network: mainnet only"),
 };
 
 function latestBench(): unknown | null {
@@ -71,13 +73,21 @@ server.registerTool(
       requester?: string;
       network?: string;
     };
-    if (!signature && !serializedTx && !intent) {
+    const parsed = ActionInputSchema.safeParse({ signature, serializedTx, intent, requester, network: network ?? "mainnet" });
+    if (!parsed.success) {
       return {
         isError: true,
-        content: [{ type: "text", text: "Provide at least one of: signature | serializedTx | intent" }],
+        content: [{ type: "text", text: `invalid action: ${parsed.error.issues.map((i) => i.message).join("; ")}` }],
       };
     }
-    const action: ActionInput = { signature, serializedTx, intent, requester, network: network ?? "mainnet" };
+    const action: ActionInput = parsed.data;
+    const release = acquireCouncilSlot();
+    if (!release) {
+      return {
+        isError: true,
+        content: [{ type: "text", text: `council busy: ${JSON.stringify(councilGateStatus())}` }],
+      };
+    }
     try {
       const decision = await runCouncil(action);
       lastDecision = decision;
@@ -87,6 +97,8 @@ server.registerTool(
         isError: true,
         content: [{ type: "text", text: `council failed: ${String(e).slice(0, 400)}` }],
       };
+    } finally {
+      release();
     }
   },
 );
@@ -119,10 +131,32 @@ server.registerTool(
   },
 );
 
+server.registerTool(
+  "getAuditChain",
+  {
+    description:
+      "Return the in-process tamper-evident decision hash chain and verification result (prevHash → eventHash).",
+  },
+  async () => {
+    const { headHash, listAuditChain, verifyChain } = await import("@/lib/auditChain");
+    const events = listAuditChain(50);
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ headHash: headHash(), verification: verifyChain(events), events }, null, 2),
+        },
+      ],
+    };
+  },
+);
+
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("[on-chain-risk-council] MCP server ready on stdio (tools: submitAction, getDecision, getBenchmark)");
+  console.error(
+    "[on-chain-risk-council] MCP server ready on stdio (tools: submitAction, getDecision, getBenchmark, getAuditChain)",
+  );
 }
 
 main().catch((e) => {
