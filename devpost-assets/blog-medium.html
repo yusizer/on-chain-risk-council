@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>On-Chain Risk Council — Medium</title>
+<style>
+  body { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; line-height: 1.7; color: #242424; max-width: 700px; margin: 40px auto; padding: 0 20px; }
+  h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; }
+  h2 { font-size: 24px; font-weight: 700; margin-top: 40px; }
+  h3 { font-size: 20px; font-weight: 600; margin-top: 28px; }
+  p { margin-bottom: 20px; }
+  em { font-style: italic; color: #6b6b6b; }
+  strong { font-weight: 700; }
+  code { font-family: 'Menlo', 'Courier New', monospace; background: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-size: 15px; }
+  pre { background: #f5f5f5; padding: 16px 20px; border-radius: 6px; overflow-x: auto; margin: 20px 0; }
+  pre code { background: none; padding: 0; font-size: 15px; }
+  table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 16px; }
+  th { background: #f5f5f5; font-weight: 600; text-align: left; padding: 10px 12px; border: 1px solid #ddd; }
+  td { padding: 10px 12px; border: 1px solid #ddd; }
+  tr:nth-child(even) { background: #fafafa; }
+  blockquote { border-left: 4px solid #ddd; margin: 20px 0; padding: 10px 20px; background: #fafafa; }
+  blockquote p { margin: 0; }
+  ul { margin-bottom: 20px; }
+  li { margin-bottom: 8px; }
+  a { color: #0077cc; text-decoration: none; }
+  hr { border: none; border-top: 1px solid #ddd; margin: 40px 0; }
+</style>
+</head>
+<body>
+
+<h1>I Let 5 AIs Argue About a $325M Hack — Then Made Code the Boss</h1>
+
+<p><em>Build-in-public for the Global AI Hackathon with Qwen Cloud — Track 3: Agent Society. Originally built as the On-Chain Risk Council.</em></p>
+
+<hr>
+
+<p>A single LLM asked "is this transaction safe?" is a trap. It misses novel attack patterns, and — worse — it has <strong>no hard safety floor</strong>. A fluent model can talk its way past any soft threshold. I'd watched wallet drainers steal nine figures, and I knew one smart model wasn't the answer. So I built a <i>society</i> of specialised Qwen agents that deliberates over a Solana action — and then a <strong>deterministic one-way-ratchet guardrail</strong> makes the final call. Every decision is written into a <strong>tamper-evident hash chain</strong>. Consensus is necessary, never sufficient.</p>
+
+<p>▶️ Watch the demo: <a href="https://youtu.be/U1kYVl1zM70">https://youtu.be/U1kYVl1zM70</a></p>
+
+<h2>The Problem I Kept Hitting</h2>
+
+<p>The naive version failed twice in ways that mattered. First, a strong lone model green-lit <strong>four of four</strong> real historical exploit signatures — Wormhole's <code>$325M</code> <code>complete_wrapped</code>, Wormhole <code>verify_signatures</code>, Cashio's <code>$48M</code> <code>mint 2B</code>, Cashio <code>fake_root</code>. It sounded confident every time. Second, when I first wired multiple agents, they <i>over-blocked</i>: a clean "send 0.5 SOL to a friend" got rejected because someone smelled "transfer." I had built a system that was safe but useless.</p>
+
+<p>The fix wasn't more prompting. It was architecture: derive <code>reversible</code> and <code>authorityChanges</code> only from trusted Solana decoding — never from the user's word ("it's refundable!") — and let a <strong>routine corridor</strong> fast-pass low-stakes transfers while the council still convenes on anything irreversible.</p>
+
+<h2>Why a Society, Not a Hero</h2>
+
+<p>Track 3 asks for role division, dialogue/conflict resolution, and a <strong>measurable gain over a single-agent baseline</strong>. Real transaction review needs more than one perspective:</p>
+
+<ul>
+  <li><strong>Intake</strong> — <code>qwen-turbo</code> + deterministic Solana decode normalises free-text or a raw tx into a structured action record.</li>
+  <li><strong>Risk Analyst</strong> — amount, counterparty novelty, authority changes.</li>
+  <li><strong>Exploit Skeptic</strong> — pulls on-chain evidence via Helius MCP and semantically recalls labelled exploits from pgvector.</li>
+  <li><strong>Compliance</strong> — deterministic policy (block patterns, amount caps).</li>
+  <li><strong>Simulator</strong> — fork-simulates the tx via Helius <code>simulateTransaction</code>.</li>
+  <li><strong>Referee</strong> — votes <i>last</i>, after seeing everyone else; the strongest model, but <b>not</b> the decision-maker. Code is.</li>
+</ul>
+
+<h2>A Case on Screen</h2>
+
+<blockquote>
+<p>Take the intent <i>"Approve a dodgy token and let a site drain my SOL via a malicious delegate."</i> Intake classifies it as authority delegation. Risk flags the delegate privilege; Exploit Skeptic recalls similar drainer signatures from pgvector; Compliance marks it a blocking pattern. All three vote <strong>reject</strong>, the Referee agrees, and the guardrail confirms — unanimous reject, no human override needed.</p>
+</blockquote>
+
+<p>Contrast that with <i>"Send 0.5 SOL to a friend, no approvals"</i>: routine corridor, unanimously <strong>approve</strong>. Same council, opposite calls — because the structure, not the vibe, drives the outcome.</p>
+
+<h2>Architecture (Short)</h2>
+
+<pre><code>Client → Next.js API → Orchestrator
+  → Intake (qwen-turbo + deterministic Solana decode)
+  → Risk ‖ Exploit ‖ Compliance ‖ Simulator
+  → Cross-debate (agents revise; safety floor never downgrades)
+  → Referee
+  → Guardrail (one-way ratchet + routine corridor)
+  → Audit hash chain</code></pre>
+
+<p>Double MCP: the council <strong>consumes</strong> Helius for on-chain evidence and <strong>exposes</strong> itself (<code>submitAction</code>, <code>getDecision</code>, <code>getBenchmark</code>) so wallets and other agents can ask before signing.</p>
+
+<h2>Benchmark (Honest)</h2>
+
+<p>19 labelled actions including <strong>real</strong> Wormhole/Cashio mainnet signatures:</p>
+
+<table>
+<tr><th>Setup</th><th>malRecall</th><th>falseApprove</th><th>cleanApprove</th><th>accuracy</th></tr>
+<tr><td>Lone <code>qwen3.7-max</code> (no guardrail)</td><td>60%</td><td>40%</td><td>100%</td><td>79%</td></tr>
+<tr><td>Council (5 agents + guardrail, no memory)</td><td><strong>100%</strong></td><td><strong>0%</strong></td><td>89%</td><td><strong>95%</strong></td></tr>
+</table>
+
+<p>The lone strong model false-approves <strong>40%</strong> of exploits. The council false-approves <strong>zero</strong>. That is the Track 3 measurable gain: not "more chat", but <b>fewer catastrophic approvals</b>.</p>
+
+<h2>Running on Qwen Cloud + Alibaba</h2>
+
+<p>The whole thing runs on an Alibaba Cloud ECS instance (Singapore, <code>43.106.15.232</code>) — Qwen Cloud via DashScope for the agents, PostgreSQL + pgvector for exploit memory and the audit log. The deployment self-verifies through <code>alibaba/proof.ts</code>: ECS instance check, pgvector installed, Qwen reachable, Helius MCP returning 10 tools, council end-to-end green. At submit time the free-trial credit was 84% intact.</p>
+
+<h2>What I Learned</h2>
+
+<ul>
+  <li>Multi-agent value shows up on <strong>nuanced</strong> cases and evidence, not on obvious drainers.</li>
+  <li><code>reversible</code> must never come from the user — derive it only from trusted structure.</li>
+  <li>Hash-chaining decisions turns a demo into an audit trail another agent can verify.</li>
+  <li>Qwen Cloud + Alibaba ECS is enough to ship a production-shaped gate inside a hackathon window.</li>
+</ul>
+
+<h2>Try It / What's Next</h2>
+
+<ul>
+  <li><strong>Live:</strong> <a href="http://43.106.15.232:3000">http://43.106.15.232:3000</a></li>
+  <li><strong>Repo:</strong> <a href="https://github.com/yusizer/on-chain-risk-council">github.com/yusizer/on-chain-risk-council</a></li>
+  <li><strong>Audit:</strong> <code>/api/audit</code> · <strong>Bench:</strong> <code>/benchmark</code></li>
+</ul>
+
+<p>Built with Qwen Cloud (DashScope), Helius MCP, Alibaba Cloud ECS + pgvector, Next.js 16, TypeScript.</p>
+
+<p>Next: more real exploit signatures in pgvector, a wallet browser extension that calls the council MCP before every sign, and a continuously-running bench on new mainnet drainers. If you're building agents that touch value, star the repo and tell me what your guardrail looks like.</p>
+
+<hr>
+
+<p><em>Track 3: Agent Society · Feedback welcome.</em></p>
+
+</body>
+</html>
