@@ -59,7 +59,7 @@ Qwen Cloud (DashScope) · Helius MCP · Alibaba Cloud ECS + pgvector · Next.js 
 ## Links
 
 - **Repo:** https://github.com/yusizer/on-chain-risk-council
-- **Demo video:** TODO_YOUTUBE_URL_AFTER_UPLOAD
+- **Demo video:** https://youtu.be/U1kYVl1zM70
 - **Live demo:** http://43.106.15.232:3000
 - **Architecture:** `ARCHITECTURE.md`
 - **Alibaba proof:** `alibaba/proof.ts` + `alibaba/proof.json`
