@@ -12,7 +12,7 @@
  * SSE is consumed with a fetch() POST + ReadableStream reader (EventSource
  * cannot POST). This is the Presentation-criterion live demo surface.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { sanitize } from "@/lib/sanitize";
 import type {
@@ -135,8 +135,10 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const autoDemoStartedRef = useRef(false);
-  const [autoDemo] = useState(() =>
-    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("demo") === "1",
+  const autoDemo = useSyncExternalStore(
+    () => () => {},
+    () => new URLSearchParams(window.location.search).get("demo") === "1",
+    () => false
   );
   const [demoTxReady, setDemoTxReady] = useState(false);
 
